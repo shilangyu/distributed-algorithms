@@ -3,7 +3,6 @@
 #include <thread>
 
 #include <signal.h>
-#include "hello.hpp"
 #include "parser.hpp"
 
 static void stop(int) {
@@ -28,11 +27,9 @@ int main(int argc, char** argv) {
   // `true` means that a config file is required.
   // Call with `false` if no config file is necessary.
   bool requireConfig = true;
-
-  Parser parser(argc, argv);
+  Parser parser(argc, argv, requireConfig);
   parser.parse();
 
-  hello();
   std::cout << std::endl;
 
   std::cout << "My PID: " << getpid() << "\n";
@@ -49,8 +46,8 @@ int main(int argc, char** argv) {
     std::cout << host.id << "\n";
     std::cout << "Human-readable IP: " << host.ipReadable() << "\n";
     std::cout << "Machine-readable IP: " << host.ip << "\n";
-    std::cout << "Human-readbale Port: " << host.portReadable() << "\n";
-    std::cout << "Machine-readbale Port: " << host.port << "\n";
+    std::cout << "Human-readable Port: " << host.portReadable() << "\n";
+    std::cout << "Machine-readable Port: " << host.port << "\n";
     std::cout << "\n";
   }
   std::cout << "\n";
