@@ -3,12 +3,15 @@
 #include <thread>
 
 #include <signal.h>
+#include "common.hpp"
 #include "parser.hpp"
 
 static void stop(int) {
   // reset signal handlers to default
-  signal(SIGTERM, SIG_DFL);
-  signal(SIGINT, SIG_DFL);
+  perror_check(signal(SIGTERM, SIG_DFL) == SIG_ERR,
+               "reset SIGTERM signal handler");
+  perror_check(signal(SIGINT, SIG_DFL) == SIG_ERR,
+               "reset SIGINT signal handler");
 
   // immediately stop network packet processing
   std::cout << "Immediately stopping network packet processing.\n";
@@ -21,8 +24,8 @@ static void stop(int) {
 }
 
 int main(int argc, char** argv) {
-  signal(SIGTERM, stop);
-  signal(SIGINT, stop);
+  perror_check(signal(SIGTERM, stop) == SIG_ERR, "set SIGTERM signal handler");
+  perror_check(signal(SIGINT, stop) == SIG_ERR, "set SIGINT signal handler");
 
   // `true` means that a config file is required.
   // Call with `false` if no config file is necessary.
@@ -59,6 +62,9 @@ int main(int argc, char** argv) {
   std::cout << "Path to config:\n";
   std::cout << "===============\n";
   std::cout << parser.configPath() << "\n\n";
+  std::cout << "Perfect links config:\n";
+  std::cout << "m=" << std::get<0>(parser.perfectLinksConfig())
+            << ", i=" << std::get<1>(parser.perfectLinksConfig()) << "\n\n";
 
   std::cout << "Doing some initialization...\n\n";
 
