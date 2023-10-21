@@ -4,6 +4,7 @@
 #include <sys/socket.h>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <functional>
 #include <mutex>
@@ -24,7 +25,7 @@ class PerfectLink {
   PerfectLink(const std::size_t id);
 
   /// @brief If the link was bound to a socket, destructor will close the
-  /// socket. If listener was created, it will be cancelled.
+  /// socket.
   ~PerfectLink();
 
   /// @brief Binds this link to a host and port. Once done cannot be done again.
@@ -33,7 +34,11 @@ class PerfectLink {
   using ListenCallback =
       std::function<auto(IdType process_id, std::vector<uint8_t> data)->void>;
 
-  auto listen(ListenCallback callback) -> void;
+  /// @brief Starts listening to incoming messages. Sends ACKs for new messages.
+  /// Receives ACKs and resends messages with missing ACKs.
+  /// @param callback Function that will be called when a message is delivered.
+  /// @return The created thread handle.
+  auto listen(ListenCallback callback) -> std::thread;
 
   /// @brief Sends a message from this link to a chosen host and port. The
   /// data has to be smaller than about 64KiB. Sending is possible only
@@ -74,9 +79,6 @@ class PerfectLink {
 
   /// @brief Bound socket file descriptor. None if no bind was performed.
   std::optional<int> _sock_fd = std::nullopt;
-  /// @brief Thread used for listening to messages. None if not started
-  /// listening.
-  std::optional<std::thread> _listen_thread = std::nullopt;
   /// @brief Current sequence number of messages.
   SeqType _seq_nr = 1;
   /// @brief Map of sent messages that have not yet sent back an ACK.

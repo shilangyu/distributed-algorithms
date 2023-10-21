@@ -1,6 +1,6 @@
 #include "perfect_link.hpp"
-#include <cstring>
 #include <unistd.h>
+#include <cstring>
 #include "common.hpp"
 
 const auto& socket_bind = bind;
@@ -10,9 +10,6 @@ PerfectLink::PerfectLink(const std::size_t id) : _id(id) {}
 PerfectLink::~PerfectLink() {
   if (_sock_fd.has_value()) {
     perror_check(close(_sock_fd.value()) < 0, "failed to close socket");
-  }
-  if (_listen_thread.has_value()) {
-    _listen_thread.value().detach();
   }
   _done = true;
 }
@@ -94,7 +91,7 @@ auto PerfectLink::send(const in_addr_t host,
                        const uint8_t* data,
                        const std::size_t data_length) -> void {
   if (!_sock_fd.has_value()) {
-    throw std::runtime_error("Cannot send if not binded");
+    throw std::runtime_error("Cannot send if not bound");
   }
   auto sock_fd = _sock_fd.value();
 
@@ -107,23 +104,17 @@ auto PerfectLink::send(const in_addr_t host,
   addr.sin_addr.s_addr = host;
   addr.sin_port = port;
 
-  {
-    std::lock_guard<std::mutex> guard(_pending_for_ack_mutex);
-
-    perror_check(sendto(sock_fd, message.data(), message_size, 0,
-                        reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0,
-                 "failed to send message");
-    _pending_for_ack.try_emplace(_seq_nr, addr, message, message_size);
-    _seq_nr += 1;
-  }
+  perror_check(sendto(sock_fd, message.data(), message_size, 0,
+                      reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0,
+               "failed to send message");
+  std::lock_guard<std::mutex> guard(_pending_for_ack_mutex);
+  _pending_for_ack.try_emplace(_seq_nr, addr, message, message_size);
+  _seq_nr += 1;
 }
 
-auto PerfectLink::listen(ListenCallback callback) -> void {
+auto PerfectLink::listen(ListenCallback callback) -> std::thread {
   if (!_sock_fd.has_value()) {
-    throw std::runtime_error("Cannot listen if not binded");
-  }
-  if (_listen_thread.has_value()) {
-    throw std::runtime_error("Cannot listen twice");
+    throw std::runtime_error("Cannot listen if not bound");
   }
   auto sock_fd = _sock_fd.value();
 
@@ -186,5 +177,5 @@ auto PerfectLink::listen(ListenCallback callback) -> void {
     }
   });
 
-  _listen_thread = std::move(listener);
+  return listener;
 }

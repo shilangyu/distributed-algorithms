@@ -53,17 +53,15 @@ int main(int argc, char** argv) {
 
   if (parser.id() == i) {
     // we are the receiver process
-    std::cout << "I am receiver" << std::endl;
-    link.listen([&output](auto process_id, auto data) {
+    auto listen_handle = link.listen([&output](auto process_id, auto data) {
       SendType msg = 0;
       for (size_t i = 0; i < sizeof(SendType); i++) {
         msg |= static_cast<SendType>(data[i]) << i * 8;
       }
       output << "d " << process_id << " " << msg << std::endl;
     });
-    // TODO: write to log
+    listen_handle.join();
   } else {
-    std::cout << "I am sender" << std::endl;
     auto receiverHost = parser.hostById(i);
     if (!receiverHost.has_value()) {
       throw std::runtime_error("Receiver host not defined in hosts file");
@@ -79,8 +77,10 @@ int main(int argc, char** argv) {
                 msg.size());
       output << "b " << n << std::endl;
     }
-    link.listen(
+
+    auto resend_handle = link.listen(
         []([[maybe_unused]] auto process_id, [[maybe_unused]] auto data) {});
+    resend_handle.join();
   }
 
   // After a process finishes broadcasting,
