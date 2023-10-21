@@ -1,4 +1,6 @@
 #include "perfect_link.hpp"
+#include <cstring>
+#include <unistd.h>
 #include "common.hpp"
 
 const auto& socket_bind = bind;
@@ -24,7 +26,7 @@ auto PerfectLink::bind(const in_addr_t host, const in_port_t port) -> void {
   perror_check(sock_fd < 0, "socket creation failure");
 
   sockaddr_in addr;
-  memset(&addr, 0, sizeof(addr));
+  std::memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = host;
   addr.sin_port = port;
@@ -100,7 +102,7 @@ auto PerfectLink::send(const in_addr_t host,
       _prepare_message(_seq_nr, data, data_length, false);
 
   sockaddr_in addr;
-  memset(&addr, 0, sizeof(addr));
+  std::memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = host;
   addr.sin_port = port;
@@ -114,8 +116,6 @@ auto PerfectLink::send(const in_addr_t host,
     _pending_for_ack.try_emplace(_seq_nr, addr, message, message_size);
     _seq_nr += 1;
   }
-
-  //  TODO: wait for ACK
 }
 
 auto PerfectLink::listen(ListenCallback callback) -> void {
@@ -131,7 +131,7 @@ auto PerfectLink::listen(ListenCallback callback) -> void {
     std::array<uint8_t, MAX_MESSAGE_SIZE> message;
 
     sockaddr_in sender_addr;
-    memset(&sender_addr, 0, sizeof(sender_addr));
+    std::memset(&sender_addr, 0, sizeof(sender_addr));
     socklen_t sender_addr_len = sizeof(sender_addr);
 
     while (true) {

@@ -58,7 +58,7 @@ class Parser {
       char addrstr[128];
       void* ptr;
 
-      memset(&hints, 0, sizeof(hints));
+      std::memset(&hints, 0, sizeof(hints));
       hints.ai_family = PF_UNSPEC;
       hints.ai_socktype = SOCK_STREAM;
       hints.ai_flags |= AI_CANONNAME;
@@ -131,6 +131,8 @@ class Parser {
         std::cout << "Perfect links config:\n";
         std::cout << "m=" << std::get<0>(perfectLinksConfig())
                   << ", i=" << std::get<1>(perfectLinksConfig()) << "\n\n";
+        break;
+      default:
         break;
     }
   }

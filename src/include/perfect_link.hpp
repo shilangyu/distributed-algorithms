@@ -2,9 +2,10 @@
 
 #include <netinet/in.h>
 #include <sys/socket.h>
-#include <unistd.h>
 #include <array>
+#include <atomic>
 #include <cstddef>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <thread>
