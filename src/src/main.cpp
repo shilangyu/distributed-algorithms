@@ -47,18 +47,26 @@ int main(int argc, char** argv) {
     throw std::runtime_error("Host not defined in the hosts file");
   }
 
+  using SendType = size_t;
+
   if (parser.id() == i) {
-    std::cout << "I am receiver" << std::endl;
     // we are the receiver process
-    // TODO
+    std::cout << "I am receiver" << std::endl;
+    link.listen([](auto process_id, auto data) {
+      SendType msg = 0;
+      for (size_t i = 0; i < sizeof(SendType); i++) {
+        msg |= static_cast<SendType>(data[i]) << i * 8;
+      }
+      std::cout << "Got message from process_id=" << process_id
+                << " with msg=" << msg << std::endl;
+    });
+    // TODO: write to log
   } else {
     std::cout << "I am sender" << std::endl;
     auto receiverHost = parser.hostById(i);
     if (!receiverHost.has_value()) {
       throw std::runtime_error("Receiver host not defined in hosts file");
     }
-
-    using SendType = size_t;
 
     // we are a sender process
     std::array<uint8_t, sizeof(SendType)> msg;
@@ -68,11 +76,15 @@ int main(int argc, char** argv) {
       }
       link.send(receiverHost.value().ip, receiverHost.value().port, msg.data(),
                 msg.size());
+      // TODO: write to log
     }
+    link.listen(
+        []([[maybe_unused]] auto process_id, [[maybe_unused]] auto data) {});
   }
 
   // After a process finishes broadcasting,
   // it waits forever for the delivery of messages.
+  std::cout << "Done work" << std::endl;
   while (true) {
     std::this_thread::sleep_for(std::chrono::hours(1));
   }
