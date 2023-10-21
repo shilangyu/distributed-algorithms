@@ -1,3 +1,4 @@
+#include <array>
 #include <chrono>
 #include <iostream>
 #include <thread>
@@ -15,10 +16,10 @@ static void stop(int) {
                "reset SIGINT signal handler");
 
   // immediately stop network packet processing
-  std::cout << "Immediately stopping network packet processing.\n";
+  std::cout << "TODO Immediately stopping network packet processing.\n";
 
   // write/flush output file if necessary
-  std::cout << "Writing output.\n";
+  std::cout << "TODO Writing output.\n";
 
   // exit directly from signal handler
   exit(0);
@@ -33,42 +34,11 @@ int main(int argc, char** argv) {
   bool requireConfig = true;
   Parser parser(argc, argv, requireConfig);
   parser.parse();
+  parser.dumpInfo(Stage::perfect_links);
 
-  std::cout << std::endl;
+  auto [m, i] = parser.perfectLinksConfig();
 
-  std::cout << "My PID: " << getpid() << "\n";
-  std::cout << "From a new terminal type `kill -SIGINT " << getpid()
-            << "` or `kill -SIGTERM " << getpid()
-            << "` to stop processing packets\n\n";
-
-  std::cout << "My ID: " << parser.id() << "\n\n";
-
-  std::cout << "List of resolved hosts is:\n";
-  std::cout << "==========================\n";
-  auto hosts = parser.hosts();
-  for (auto& host : hosts) {
-    std::cout << host.id << "\n";
-    std::cout << "Human-readable IP: " << host.ipReadable() << "\n";
-    std::cout << "Machine-readable IP: " << host.ip << "\n";
-    std::cout << "Human-readable Port: " << host.portReadable() << "\n";
-    std::cout << "Machine-readable Port: " << host.port << "\n";
-    std::cout << "\n";
-  }
-  std::cout << "\n";
-
-  std::cout << "Path to output:\n";
-  std::cout << "===============\n";
-  std::cout << parser.outputPath() << "\n\n";
-
-  std::cout << "Path to config:\n";
-  std::cout << "===============\n";
-  std::cout << parser.configPath() << "\n\n";
-  std::cout << "Perfect links config:\n";
-  std::cout << "m=" << std::get<0>(parser.perfectLinksConfig())
-            << ", i=" << std::get<1>(parser.perfectLinksConfig()) << "\n\n";
-
-  std::cout << "Doing some initialization...\n\n";
-
+  // create link and bind
   PerfectLink link{parser.id()};
   auto myHost = parser.hostById(parser.id());
   if (myHost.has_value()) {
@@ -77,7 +47,29 @@ int main(int argc, char** argv) {
     throw std::runtime_error("Host not defined in the hosts file");
   }
 
-  std::cout << "Broadcasting and delivering messages...\n\n";
+  if (parser.id() == i) {
+    std::cout << "I am receiver" << std::endl;
+    // we are the receiver process
+    // TODO
+  } else {
+    std::cout << "I am sender" << std::endl;
+    auto receiverHost = parser.hostById(i);
+    if (!receiverHost.has_value()) {
+      throw std::runtime_error("Receiver host not defined in hosts file");
+    }
+
+    using SendType = size_t;
+
+    // we are a sender process
+    std::array<uint8_t, sizeof(SendType)> msg;
+    for (SendType n = 1; n <= m; n++) {
+      for (size_t i = 0; i < sizeof(SendType); i++) {
+        msg[i] = (n << i * 8) & 0xff;
+      }
+      link.send(receiverHost.value().ip, receiverHost.value().port, msg.data(),
+                msg.size());
+    }
+  }
 
   // After a process finishes broadcasting,
   // it waits forever for the delivery of messages.

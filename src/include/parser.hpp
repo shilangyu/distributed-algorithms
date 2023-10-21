@@ -20,6 +20,8 @@
 #include <cstdlib>
 #include <cstring>
 
+enum class Stage { perfect_links };
+
 class Parser {
  public:
   struct Host {
@@ -94,6 +96,45 @@ class Parser {
  public:
   Parser(const int argc, char const* const* argv, bool withConfig = true)
       : argc{argc}, argv{argv}, withConfig{withConfig}, parsed{false} {}
+
+  auto dumpInfo(Stage stage) const -> void {
+    std::cout << std::endl;
+
+    std::cout << "My PID: " << getpid() << "\n";
+    std::cout << "From a new terminal type `kill -SIGINT " << getpid()
+              << "` or `kill -SIGTERM " << getpid()
+              << "` to stop processing packets\n\n";
+
+    std::cout << "My ID: " << id() << "\n\n";
+
+    std::cout << "List of resolved hosts is:\n";
+    std::cout << "==========================\n";
+    for (auto& host : hosts()) {
+      std::cout << host.id << "\n";
+      std::cout << "Human-readable IP: " << host.ipReadable() << "\n";
+      std::cout << "Machine-readable IP: " << host.ip << "\n";
+      std::cout << "Human-readable Port: " << host.portReadable() << "\n";
+      std::cout << "Machine-readable Port: " << host.port << "\n";
+      std::cout << "\n";
+    }
+    std::cout << "\n";
+
+    std::cout << "Path to output:\n";
+    std::cout << "===============\n";
+    std::cout << outputPath() << "\n\n";
+
+    std::cout << "Path to config:\n";
+    std::cout << "===============\n";
+    std::cout << configPath() << "\n\n";
+
+    switch (stage) {
+      case Stage::perfect_links:
+        std::cout << "Perfect links config:\n";
+        std::cout << "m=" << std::get<0>(perfectLinksConfig())
+                  << ", i=" << std::get<1>(perfectLinksConfig()) << "\n\n";
+        break;
+    }
+  }
 
   void parse() {
     if (!parseInternal()) {
