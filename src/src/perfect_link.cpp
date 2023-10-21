@@ -10,9 +10,9 @@ PerfectLink::~PerfectLink() {
     perror_check(close(_sock_fd.value()) < 0, "failed to close socket");
   }
   if (_listen_thread.has_value()) {
-    // TODO: terminate thread`
     _listen_thread.value().detach();
   }
+  _done = true;
 }
 
 auto PerfectLink::bind(const in_addr_t host, const in_port_t port) -> void {
@@ -139,6 +139,11 @@ auto PerfectLink::listen(ListenCallback callback) -> void {
       auto message_size =
           recvfrom(sock_fd, message.data(), message.size(), MSG_WAITALL,
                    reinterpret_cast<sockaddr*>(&sender_addr), &sender_addr_len);
+
+      if (_done) {
+        return;
+      }
+
       if (message_size < 0 && errno == EAGAIN) {
         // timed out, resend messages without ACKs
         std::lock_guard<std::mutex> guard(_pending_for_ack_mutex);

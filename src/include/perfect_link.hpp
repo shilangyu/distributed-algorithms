@@ -84,6 +84,8 @@ class PerfectLink {
   /// @brief A map of messages that have been delivered.
   std::unordered_set<std::tuple<IdType, SeqType>, hash_delivered> _delivered =
       {};
+  /// @brief Flag indicating whether this link should do no more work.
+  std::atomic_bool _done = false;
 
   /// @brief Prepares a message to be sent.
   /// @return Encoded message with its real length.
