@@ -5,6 +5,7 @@
 #include <signal.h>
 #include "common.hpp"
 #include "parser.hpp"
+#include "perfect_link.hpp"
 
 static void stop(int) {
   // reset signal handlers to default
@@ -67,6 +68,14 @@ int main(int argc, char** argv) {
             << ", i=" << std::get<1>(parser.perfectLinksConfig()) << "\n\n";
 
   std::cout << "Doing some initialization...\n\n";
+
+  PerfectLink link{parser.id()};
+  auto myHost = parser.hostById(parser.id());
+  if (myHost.has_value()) {
+    link.bind(myHost.value().ip, myHost.value().port);
+  } else {
+    throw std::runtime_error("Host not defined in the hosts file");
+  }
 
   std::cout << "Broadcasting and delivering messages...\n\n";
 

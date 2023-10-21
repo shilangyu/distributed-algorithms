@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -137,7 +138,7 @@ class Parser {
     return {m, i};
   }
 
-  std::vector<Host> hosts() {
+  std::vector<Host> hosts() const {
     std::ifstream hostsFile(hostsPath());
     std::vector<Host> hosts;
 
@@ -193,6 +194,15 @@ class Parser {
               [](const Host& a, const Host& b) -> bool { return a.id < b.id; });
 
     return hosts;
+  }
+
+  std::optional<Host> hostById(unsigned long id) const {
+    for (auto& h : hosts()) {
+      if (h.id == id) {
+        return h;
+      }
+    }
+    return {};
   }
 
  private:
@@ -303,19 +313,19 @@ class Parser {
     }
   }
 
-  void ltrim(std::string& s) {
+  void ltrim(std::string& s) const {
     s.erase(s.begin(), std::find_if(s.begin(), s.end(),
                                     [](int ch) { return !std::isspace(ch); }));
   }
 
-  void rtrim(std::string& s) {
+  void rtrim(std::string& s) const {
     s.erase(std::find_if(s.rbegin(), s.rend(),
                          [](int ch) { return !std::isspace(ch); })
                 .base(),
             s.end());
   }
 
-  void trim(std::string& s) {
+  void trim(std::string& s) const {
     ltrim(s);
     rtrim(s);
   }
