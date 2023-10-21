@@ -38,6 +38,8 @@ int main(int argc, char** argv) {
 
   auto [m, i] = parser.perfectLinksConfig();
 
+  std::ofstream output(parser.outputPath());
+
   // create link and bind
   PerfectLink link{parser.id()};
   auto myHost = parser.hostById(parser.id());
@@ -52,13 +54,12 @@ int main(int argc, char** argv) {
   if (parser.id() == i) {
     // we are the receiver process
     std::cout << "I am receiver" << std::endl;
-    link.listen([](auto process_id, auto data) {
+    link.listen([&output](auto process_id, auto data) {
       SendType msg = 0;
       for (size_t i = 0; i < sizeof(SendType); i++) {
         msg |= static_cast<SendType>(data[i]) << i * 8;
       }
-      std::cout << "Got message from process_id=" << process_id
-                << " with msg=" << msg << std::endl;
+      output << "d " << process_id << " " << msg << std::endl;
     });
     // TODO: write to log
   } else {
@@ -76,7 +77,7 @@ int main(int argc, char** argv) {
       }
       link.send(receiverHost.value().ip, receiverHost.value().port, msg.data(),
                 msg.size());
-      // TODO: write to log
+      output << "b " << n << std::endl;
     }
     link.listen(
         []([[maybe_unused]] auto process_id, [[maybe_unused]] auto data) {});
