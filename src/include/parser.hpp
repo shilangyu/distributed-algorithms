@@ -25,7 +25,6 @@ enum class Stage { perfect_links };
 class Parser {
  public:
   struct Host {
-    Host() {}
     Host(size_t id, std::string& ip_or_hostname, unsigned short port)
         : id{id}, port{htons(port)} {
       if (isValidIpAddress(ip_or_hostname.c_str())) {
