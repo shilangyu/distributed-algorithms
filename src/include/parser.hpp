@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -23,6 +24,18 @@
 enum class Stage { perfect_links };
 
 class Parser {
+ private:
+  const int argc;
+  char const* const* argv;
+  bool withConfig;
+
+  bool parsed;
+
+  uint8_t id_;
+  std::string hostsPath_;
+  std::string outputPath_;
+  std::string configPath_;
+
  public:
   struct Host {
     Host(size_t id, std::string& ip_or_hostname, unsigned short port)
@@ -104,7 +117,7 @@ class Parser {
               << "` or `kill -SIGTERM " << getpid()
               << "` to stop processing packets\n\n";
 
-    std::cout << "My ID: " << id() << "\n\n";
+    std::cout << "My ID: " << +id() << "\n\n";
 
     std::cout << "List of resolved hosts is:\n";
     std::cout << "==========================\n";
@@ -145,7 +158,7 @@ class Parser {
     parsed = true;
   }
 
-  unsigned long id() const {
+  auto id() const -> decltype(id_) {
     checkParsed();
     return id_;
   }
@@ -290,7 +303,12 @@ class Parser {
     if (std::strcmp(argv[1], "--id") == 0) {
       if (isPositiveNumber(argv[2])) {
         try {
-          id_ = std::stoul(argv[2]);
+          auto res = std::stoul(argv[2]);
+          if (res >= std::numeric_limits<decltype(id_)>::max()) {
+            return false;
+          } else {
+            id_ = static_cast<decltype(id_)>(res);
+          }
         } catch (std::invalid_argument const& e) {
           return false;
         } catch (std::out_of_range const& e) {
@@ -371,16 +389,4 @@ class Parser {
     ltrim(s);
     rtrim(s);
   }
-
- private:
-  const int argc;
-  char const* const* argv;
-  bool withConfig;
-
-  bool parsed;
-
-  unsigned long id_;
-  std::string hostsPath_;
-  std::string outputPath_;
-  std::string configPath_;
 };

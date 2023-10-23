@@ -7,7 +7,7 @@
 
 const auto& socket_bind = bind;
 
-PerfectLink::PerfectLink(const std::size_t id) : _id(id) {}
+PerfectLink::PerfectLink(const ProcessIdType id) : _id(id) {}
 
 PerfectLink::~PerfectLink() {
   if (_sock_fd.has_value()) {
@@ -41,49 +41,46 @@ auto PerfectLink::bind(const in_addr_t host, const in_port_t port) -> void {
   _sock_fd = sock_fd;
 }
 
-inline auto PerfectLink::_prepare_message(const SeqType seq_nr,
+inline auto PerfectLink::_prepare_message(const MessageIdType seq_nr,
                                           const uint8_t* data,
                                           const std::size_t data_length,
                                           const bool is_ack) const
     -> std::tuple<std::array<uint8_t, MAX_MESSAGE_SIZE>, std::size_t> {
-  if (1 + sizeof(SeqType) + sizeof(IdType) + data_length > MAX_MESSAGE_SIZE) {
+  if (1 + sizeof(MessageIdType) + sizeof(ProcessIdType) + data_length >
+      MAX_MESSAGE_SIZE) {
     throw std::runtime_error("Message is too large");
   }
 
   // message = [is_ack, ...seq_nr, ...process_id, ...data]
   std::array<uint8_t, MAX_MESSAGE_SIZE> message;
   message[0] = static_cast<uint8_t>(is_ack);
-  for (size_t i = 0; i < sizeof(SeqType); i++) {
+  for (size_t i = 0; i < sizeof(MessageIdType); i++) {
     message[i + 1] = (seq_nr << (8 * i)) & 0xff;
   }
-  for (size_t i = 0; i < sizeof(IdType); i++) {
-    message[i + 1 + sizeof(SeqType)] = (_id << (8 * i)) & 0xff;
-  }
+  message[1 + sizeof(MessageIdType)] = _id;
   if (data_length != 0) {
-    std::memcpy(message.data() + 1 + sizeof(SeqType) + sizeof(IdType), data,
-                data_length);
+    std::memcpy(
+        message.data() + 1 + sizeof(MessageIdType) + sizeof(ProcessIdType),
+        data, data_length);
   }
 
-  return {message, 1 + sizeof(SeqType) + sizeof(IdType) + data_length};
+  return {message,
+          1 + sizeof(MessageIdType) + sizeof(ProcessIdType) + data_length};
 }
 
 inline auto PerfectLink::_decode_message(
     const std::array<uint8_t, MAX_MESSAGE_SIZE> message,
     const ssize_t message_size) const
-    -> std::tuple<bool, SeqType, IdType, std::vector<uint8_t>> {
+    -> std::tuple<bool, MessageIdType, ProcessIdType, std::vector<uint8_t>> {
   std::vector<uint8_t> data(
-      message.data() + 1 + sizeof(SeqType) + sizeof(IdType),
+      message.data() + 1 + sizeof(MessageIdType) + sizeof(ProcessIdType),
       message.data() + message_size);
 
-  SeqType seq_nr = 0;
-  for (size_t i = 0; i < sizeof(SeqType); i++) {
-    seq_nr |= static_cast<SeqType>(message[i + 1]) << (8 * i);
+  MessageIdType seq_nr = 0;
+  for (size_t i = 0; i < sizeof(MessageIdType); i++) {
+    seq_nr |= static_cast<MessageIdType>(message[i + 1]) << (8 * i);
   }
-  IdType process_id = 0;
-  for (size_t i = 0; i < sizeof(IdType); i++) {
-    process_id |= static_cast<IdType>(message[i + 1 + sizeof(SeqType)])
-                  << (8 * i);
-  }
+  ProcessIdType process_id = message[1 + sizeof(MessageIdType)];
 
   return {static_cast<bool>(message[0]), seq_nr, process_id, data};
 }

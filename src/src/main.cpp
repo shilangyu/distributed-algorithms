@@ -1,18 +1,17 @@
 #include <array>
 #include <chrono>
+#include <csignal>
 #include <iostream>
 #include <thread>
-
-#include <signal.h>
 #include "common.hpp"
 #include "parser.hpp"
 #include "perfect_link.hpp"
 
 static void stop(int) {
   // reset signal handlers to default
-  perror_check(signal(SIGTERM, SIG_DFL) == SIG_ERR,
+  perror_check(std::signal(SIGTERM, SIG_DFL) == SIG_ERR,
                "reset SIGTERM signal handler");
-  perror_check(signal(SIGINT, SIG_DFL) == SIG_ERR,
+  perror_check(std::signal(SIGINT, SIG_DFL) == SIG_ERR,
                "reset SIGINT signal handler");
 
   // immediately stop network packet processing
@@ -26,8 +25,12 @@ static void stop(int) {
 }
 
 int main(int argc, char** argv) {
-  perror_check(signal(SIGTERM, stop) == SIG_ERR, "set SIGTERM signal handler");
-  perror_check(signal(SIGINT, stop) == SIG_ERR, "set SIGINT signal handler");
+  perror_check(std::signal(SIGTERM, stop) == SIG_ERR,
+               "set SIGTERM signal handler");
+  perror_check(std::signal(SIGINT, stop) == SIG_ERR,
+               "set SIGINT signal handler");
+
+  using SendType = PerfectLink::MessageIdType;
 
   // `true` means that a config file is required.
   // Call with `false` if no config file is necessary.
@@ -49,8 +52,6 @@ int main(int argc, char** argv) {
     throw std::runtime_error("Host not defined in the hosts file");
   }
 
-  using SendType = size_t;
-
   if (parser.id() == i) {
     // we are the receiver process
     auto listen_handle = link.listen([&output](auto process_id, auto data) {
@@ -58,7 +59,7 @@ int main(int argc, char** argv) {
       for (size_t i = 0; i < sizeof(SendType); i++) {
         msg |= static_cast<SendType>(data[i]) << i * 8;
       }
-      output << "d " << process_id << " " << msg << std::endl;
+      output << "d " << +process_id << " " << msg << std::endl;
     });
     listen_handle.join();
   } else {
@@ -66,6 +67,8 @@ int main(int argc, char** argv) {
     if (!receiverHost.has_value()) {
       throw std::runtime_error("Receiver host not defined in hosts file");
     }
+    auto resend_handle = link.listen(
+        []([[maybe_unused]] auto process_id, [[maybe_unused]] auto data) {});
 
     // we are a sender process
     std::array<uint8_t, sizeof(SendType)> msg;
@@ -78,8 +81,6 @@ int main(int argc, char** argv) {
       output << "b " << n << std::endl;
     }
 
-    auto resend_handle = link.listen(
-        []([[maybe_unused]] auto process_id, [[maybe_unused]] auto data) {});
     resend_handle.join();
   }
 

@@ -20,9 +20,13 @@
 /// 3. No creation - no message is delivered unless sent
 class PerfectLink {
  public:
-  using IdType = std::size_t;
+  /// @brief The type used to store ID of a process.
+  using ProcessIdType = std::uint8_t;
 
-  PerfectLink(const std::size_t id);
+  /// @brief The type used to store ID of a message.
+  using MessageIdType = std::uint32_t;
+
+  PerfectLink(const ProcessIdType id);
 
   /// @brief If the link was bound to a socket, destructor will close the
   /// socket.
@@ -31,8 +35,8 @@ class PerfectLink {
   /// @brief Binds this link to a host and port. Once done cannot be done again.
   auto bind(const in_addr_t host, const in_port_t port) -> void;
 
-  using ListenCallback =
-      std::function<auto(IdType process_id, std::vector<uint8_t> data)->void>;
+  using ListenCallback = std::function<
+      auto(ProcessIdType process_id, std::vector<uint8_t> data)->void>;
 
   /// @brief Starts listening to incoming messages. Sends ACKs for new messages.
   /// Receives ACKs and resends messages with missing ACKs.
@@ -52,8 +56,8 @@ class PerfectLink {
   static constexpr std::size_t MAX_MESSAGE_SIZE = 64 * (1 << 10) - 1;
   static constexpr timeval RESEND_TIMEOUT = {0, 200000};
 
-  /// @brief Data structor to hold temporary data of a message that was sent but
-  /// where no ACK for it was yet received.
+  /// @brief Data structure to hold temporary data of a message that was sent
+  /// but where no ACK for it was yet received.
   struct PendingMessage {
     PendingMessage(const sockaddr_in addr,
                    const std::array<uint8_t, MAX_MESSAGE_SIZE> message,
@@ -64,15 +68,13 @@ class PerfectLink {
     const std::size_t message_size;
   };
 
-  /// @brief Id of a message, the sequential number.
-  using SeqType = std::size_t;
-
   /// @brief Id of this process.
-  const IdType _id;
+  const ProcessIdType _id;
 
   /// @brief Hash function for `_delivered`.
   struct hash_delivered {
-    size_t operator()(const std::tuple<IdType, SeqType>& arg) const noexcept {
+    size_t operator()(
+        const std::tuple<ProcessIdType, MessageIdType>& arg) const noexcept {
       return std::get<0>(arg) ^ std::get<1>(arg);
     }
   };
@@ -80,19 +82,19 @@ class PerfectLink {
   /// @brief Bound socket file descriptor. None if no bind was performed.
   std::optional<int> _sock_fd = std::nullopt;
   /// @brief Current sequence number of messages.
-  SeqType _seq_nr = 1;
+  MessageIdType _seq_nr = 1;
   /// @brief Map of sent messages that have not yet sent back an ACK.
-  std::unordered_map<SeqType, PendingMessage> _pending_for_ack = {};
+  std::unordered_map<MessageIdType, PendingMessage> _pending_for_ack = {};
   std::mutex _pending_for_ack_mutex;
   /// @brief A map of messages that have been delivered.
-  std::unordered_set<std::tuple<IdType, SeqType>, hash_delivered> _delivered =
-      {};
+  std::unordered_set<std::tuple<ProcessIdType, MessageIdType>, hash_delivered>
+      _delivered = {};
   /// @brief Flag indicating whether this link should do no more work.
   std::atomic_bool _done = false;
 
   /// @brief Prepares a message to be sent.
   /// @return Encoded message with its real length.
-  inline auto _prepare_message(const SeqType seq_nr,
+  inline auto _prepare_message(const MessageIdType seq_nr,
                                const uint8_t* data,
                                const std::size_t data_length,
                                const bool is_ack) const
@@ -103,5 +105,5 @@ class PerfectLink {
   inline auto _decode_message(
       const std::array<uint8_t, MAX_MESSAGE_SIZE> message,
       const ssize_t message_size) const
-      -> std::tuple<bool, SeqType, IdType, std::vector<uint8_t>>;
+      -> std::tuple<bool, MessageIdType, ProcessIdType, std::vector<uint8_t>>;
 };
