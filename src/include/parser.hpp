@@ -143,7 +143,7 @@ class Parser {
       case Stage::perfect_links:
         std::cout << "Perfect links config:\n";
         std::cout << "m=" << std::get<0>(perfectLinksConfig())
-                  << ", i=" << std::get<1>(perfectLinksConfig()) << "\n\n";
+                  << ", i=" << +std::get<1>(perfectLinksConfig()) << "\n\n";
         break;
       default:
         break;
@@ -183,14 +183,18 @@ class Parser {
     return configPath_.c_str();
   }
 
-  auto perfectLinksConfig() const -> std::tuple<size_t, size_t> {
+  auto perfectLinksConfig() const -> std::tuple<size_t, decltype(id_)> {
     std::ifstream infile(configPath());
 
-    int m;
-    int i;
+    size_t m;
+    size_t i;
     infile >> m >> i;
 
-    return {m, i};
+    if (i >= std::numeric_limits<decltype(id_)>::max()) {
+      throw std::runtime_error("Process index is too large");
+    }
+
+    return {m, static_cast<decltype(id_)>(i)};
   }
 
   std::vector<Host> hosts() const {

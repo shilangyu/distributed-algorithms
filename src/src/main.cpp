@@ -3,9 +3,26 @@
 #include <csignal>
 #include <iostream>
 #include <thread>
+#include <vector>
 #include "common.hpp"
 #include "parser.hpp"
 #include "perfect_link.hpp"
+
+using SendType = std::uint32_t;
+using Delivered = std::tuple<PerfectLink::ProcessIdType, SendType>;
+
+SendType sent_amount = 0;
+std::vector<Delivered> delivered;
+std::ofstream output;
+
+static auto write_delivered() -> void {
+  if (output.is_open()) {
+    for (auto& [process_id, msg] : delivered) {
+      output << "d " << +process_id << " " << msg << std::endl;
+    }
+    delivered.clear();
+  }
+}
 
 static void stop(int) {
   // reset signal handlers to default
@@ -17,8 +34,13 @@ static void stop(int) {
   // immediately stop network packet processing
   std::cout << "TODO Immediately stopping network packet processing.\n";
 
-  // write/flush output file if necessary
-  std::cout << "TODO Writing output.\n";
+  // write output file
+  if (output.is_open()) {
+    for (SendType n = 1; n <= sent_amount; n++) {
+      output << "b " << n << std::endl;
+    }
+  }
+  write_delivered();
 
   // exit directly from signal handler
   exit(0);
@@ -30,18 +52,15 @@ int main(int argc, char** argv) {
   perror_check(std::signal(SIGINT, stop) == SIG_ERR,
                "set SIGINT signal handler");
 
-  using SendType = PerfectLink::MessageIdType;
-
   // `true` means that a config file is required.
   // Call with `false` if no config file is necessary.
   bool requireConfig = true;
   Parser parser(argc, argv, requireConfig);
   parser.parse();
-  parser.dumpInfo(Stage::perfect_links);
 
   auto [m, i] = parser.perfectLinksConfig();
 
-  std::ofstream output(parser.outputPath());
+  output.open(parser.outputPath());
 
   // create link and bind
   PerfectLink link{parser.id()};
@@ -54,12 +73,19 @@ int main(int argc, char** argv) {
 
   if (parser.id() == i) {
     // we are the receiver process
-    auto listen_handle = link.listen([&output](auto process_id, auto data) {
+    // preallocate about 16MiB for delivery logs
+    delivered.reserve(16 * (1 << 20) / sizeof(Delivered));
+    auto listen_handle = link.listen([](auto process_id, auto data) {
       SendType msg = 0;
       for (size_t i = 0; i < sizeof(SendType); i++) {
-        msg |= static_cast<SendType>(data[i]) << i * 8;
+        msg |= static_cast<SendType>(data[i]) << (i * 8);
       }
-      output << "d " << +process_id << " " << msg << std::endl;
+
+      delivered.emplace_back(process_id, msg);
+      if (delivered.capacity() == delivered.size()) {
+        // we are at full capacity, flush the buffer to the file
+        write_delivered();
+      }
     });
     listen_handle.join();
   } else {
@@ -74,19 +100,18 @@ int main(int argc, char** argv) {
     std::array<uint8_t, sizeof(SendType)> msg;
     for (SendType n = 1; n <= m; n++) {
       for (size_t i = 0; i < sizeof(SendType); i++) {
-        msg[i] = (n << i * 8) & 0xff;
+        msg[i] = (n >> (i * 8)) & 0xff;
       }
       link.send(receiverHost.value().ip, receiverHost.value().port, msg.data(),
                 msg.size());
-      output << "b " << n << std::endl;
+      sent_amount = n;
     }
 
     resend_handle.join();
   }
 
-  // After a process finishes broadcasting,
-  // it waits forever for the delivery of messages.
-  std::cout << "Done work" << std::endl;
+  // after a process finishes broadcasting,
+  // it waits forever for the delivery of messages
   while (true) {
     std::this_thread::sleep_for(std::chrono::hours(1));
   }

@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
 
 import argparse
-import os, sys, atexit
-import textwrap
-import time
-import threading, subprocess
 import itertools
-
-
-import signal
+import os
 import random
+import signal
+import subprocess
+import sys
+import threading
 import time
 from enum import Enum
-
-from collections import defaultdict, OrderedDict
 
 PROCESSES_BASE_IP = 11000
 
@@ -21,7 +17,8 @@ PROCESSES_BASE_IP = 11000
 def positive_int(value):
     ivalue = int(value)
     if ivalue <= 0:
-        raise argparse.ArgumentTypeError("{} is not positive integer".format(value))
+        raise argparse.ArgumentTypeError(
+            "{} is not positive integer".format(value))
     return ivalue
 
 
@@ -99,7 +96,8 @@ class Validation:
 
         with open(hostsfile, "w") as hosts:
             for i in range(1, self.processes + 1):
-                hosts.write("{} localhost {}\n".format(i, PROCESSES_BASE_IP + i))
+                hosts.write("{} localhost {}\n".format(
+                    i, PROCESSES_BASE_IP + i))
 
         with open(configfile, "w") as config:
             config.write("{} 1\n".format(self.messages))
@@ -112,7 +110,8 @@ class Validation:
 
         with open(hostsfile, "w") as hosts:
             for i in range(1, self.processes + 1):
-                hosts.write("{} localhost {}\n".format(i, PROCESSES_BASE_IP + i))
+                hosts.write("{} localhost {}\n".format(
+                    i, PROCESSES_BASE_IP + i))
 
         with open(configfile, "w") as config:
             config.write("{}\n".format(self.messages))
@@ -132,7 +131,8 @@ class LatticeAgreementValidation:
 
         with open(hostsfile, "w") as hosts:
             for i in range(1, self.procs + 1):
-                hosts.write("{} localhost {}\n".format(i, PROCESSES_BASE_IP + i))
+                hosts.write("{} localhost {}\n".format(
+                    i, PROCESSES_BASE_IP + i))
 
         maxint = 2**31 - 1
         seeded_rand = random.Random(42)
@@ -144,11 +144,13 @@ class LatticeAgreementValidation:
 
         configfiles = []
         for pid in range(1, self.procs + 1):
-            configfile = os.path.join(directory, "proc{:02d}.config".format(pid))
+            configfile = os.path.join(
+                directory, "proc{:02d}.config".format(pid))
             configfiles.append(configfile)
 
             with open(configfile, "w") as config:
-                config.write("{} {} {}\n".format(self.props, self.mps, self.dval))
+                config.write("{} {} {}\n".format(
+                    self.props, self.mps, self.dval))
 
                 for i in range(self.props):
                     proposal = seeded_rand.sample(
@@ -184,7 +186,8 @@ class StressTest:
         selectOp = (
             [ProcessState.STOPPED] * int(1000 * self.attemptsRatio["STOP"])
             + [ProcessState.RUNNING] * int(1000 * self.attemptsRatio["CONT"])
-            + [ProcessState.TERMINATED] * int(1000 * self.attemptsRatio["TERM"])
+            + [ProcessState.TERMINATED] *
+            int(1000 * self.attemptsRatio["TERM"])
         )
         random.shuffle(selectOp)
 
@@ -356,7 +359,8 @@ def main(parser_results, testConfig):
 
     try:
         # Start the processes and get their PIDs
-        procs = startProcesses(processes, runscript, hostsFile, configFiles, logsDir)
+        procs = startProcesses(processes, runscript,
+                               hostsFile, configFiles, logsDir)
 
         # Create the stress test
         st = StressTest(
@@ -416,9 +420,11 @@ def main(parser_results, testConfig):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    sub_parsers = parser.add_subparsers(dest="command", help="stress a given milestone")
+    sub_parsers = parser.add_subparsers(
+        dest="command", help="stress a given milestone")
     sub_parsers.required = True
-    parser_perfect = sub_parsers.add_parser("perfect", help="stress perfect links")
+    parser_perfect = sub_parsers.add_parser(
+        "perfect", help="stress perfect links")
     parser_fifo = sub_parsers.add_parser("fifo", help="stress fifo broadcast")
     parser_agreement = sub_parsers.add_parser(
         "agreement", help="stress lattice agreement"
@@ -493,7 +499,8 @@ if __name__ == "__main__":
         "concurrency": 8,  # How many threads are interferring with the running processes
         "attempts": 8,  # How many interferring attempts each threads does
         "attemptsDistribution": {  # Probability with which an interferring thread will
-            "STOP": 0.48,  # select an interferring action (make sure they add up to 1)
+            # select an interferring action (make sure they add up to 1)
+            "STOP": 0.48,
             "CONT": 0.48,
             "TERM": 0.04,
         },
