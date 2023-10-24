@@ -97,13 +97,37 @@ int main(int argc, char** argv) {
         []([[maybe_unused]] auto process_id, [[maybe_unused]] auto data) {});
 
     // we are a sender process
-    std::array<uint8_t, sizeof(SendType)> msg;
-    for (SendType n = 1; n <= m; n++) {
+    // pack 8 datas in one message
+    constexpr auto pack = 8;
+    std::array<uint8_t, pack * sizeof(SendType)> msg;
+    for (SendType n = pack; n <= m; n += 8) {
+      for (size_t j = 1; j <= pack; j++) {
+        for (size_t i = 0; i < sizeof(SendType); i++) {
+          msg[(j - 1) * sizeof(SendType) + i] =
+              ((n - pack + j) >> (i * 8)) & 0xff;
+        }
+      }
+
+      link.send(
+          receiverHost.value().ip, receiverHost.value().port,
+          std::make_tuple(msg.data() + 0 * sizeof(SendType), sizeof(SendType)),
+          std::make_tuple(msg.data() + 1 * sizeof(SendType), sizeof(SendType)),
+          std::make_tuple(msg.data() + 2 * sizeof(SendType), sizeof(SendType)),
+          std::make_tuple(msg.data() + 3 * sizeof(SendType), sizeof(SendType)),
+          std::make_tuple(msg.data() + 4 * sizeof(SendType), sizeof(SendType)),
+          std::make_tuple(msg.data() + 5 * sizeof(SendType), sizeof(SendType)),
+          std::make_tuple(msg.data() + 6 * sizeof(SendType), sizeof(SendType)),
+          std::make_tuple(msg.data() + 7 * sizeof(SendType), sizeof(SendType)));
+      sent_amount = n;
+    }
+    // send rest individually
+    for (SendType n = sent_amount + 1; n <= m; n++) {
       for (size_t i = 0; i < sizeof(SendType); i++) {
         msg[i] = (n >> (i * 8)) & 0xff;
       }
-      link.send(receiverHost.value().ip, receiverHost.value().port, msg.data(),
-                msg.size());
+
+      link.send(receiverHost.value().ip, receiverHost.value().port,
+                std::make_tuple(msg.data(), sizeof(SendType)));
       sent_amount = n;
     }
 

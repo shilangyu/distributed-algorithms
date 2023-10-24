@@ -6,12 +6,16 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstring>
 #include <functional>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
+#include "common.hpp"
 
 /// Enforces 3 properties for point-to-point communication:
 /// 1. Validity - if p1 and p2 are correct, every message sent by p1 is
@@ -22,9 +26,6 @@ class PerfectLink {
  public:
   /// @brief The type used to store ID of a process.
   using ProcessIdType = std::uint8_t;
-
-  /// @brief The type used to store ID of a message.
-  using MessageIdType = std::uint32_t;
 
   PerfectLink(const ProcessIdType id);
 
@@ -47,13 +48,21 @@ class PerfectLink {
   /// @brief Sends a message from this link to a chosen host and port. The
   /// data has to be smaller than about 64KiB. Sending is possible only
   /// after performing a bind.
-  auto send(const in_addr_t host,
-            const in_port_t port,
-            const uint8_t* data,
-            const std::size_t data_length) -> void;
+  template <
+      typename... Data,
+      class = std::enable_if_t<
+          are_equal<std::tuple<std::uint8_t*, std::size_t>, Data...>::value>>
+  auto send(const in_addr_t host, const in_port_t port, Data... datas) -> void;
 
  private:
-  static constexpr std::size_t MAX_MESSAGE_SIZE = 64 * (1 << 10) - 1;
+  /// @brief The type used to store ID of a message.
+  using MessageIdType = std::uint32_t;
+
+  /// @brief The type used to store the size of data.
+  using MessageSizeType = std::uint16_t;
+
+  static constexpr std::size_t MAX_MESSAGE_SIZE =
+      std::numeric_limits<MessageSizeType>::max();
   static constexpr timeval RESEND_TIMEOUT = {0, 200000};
 
   /// @brief Data structure to hold temporary data of a message that was sent
@@ -94,16 +103,83 @@ class PerfectLink {
 
   /// @brief Prepares a message to be sent.
   /// @return Encoded message with its real length.
+  template <
+      typename... Data,
+      class = std::enable_if_t<
+          are_equal<std::tuple<std::uint8_t*, std::size_t>, Data...>::value>>
   inline auto _prepare_message(const MessageIdType seq_nr,
-                               const uint8_t* data,
-                               const std::size_t data_length,
-                               const bool is_ack) const
+                               const bool is_ack,
+                               Data... datas) const
       -> std::tuple<std::array<uint8_t, MAX_MESSAGE_SIZE>, std::size_t>;
 
   /// @brief Given a message from network decodes it to data.
   /// @return is_ack, seq_nr, process_id, data
   inline auto _decode_message(
       const std::array<uint8_t, MAX_MESSAGE_SIZE> message,
-      const ssize_t message_size) const
-      -> std::tuple<bool, MessageIdType, ProcessIdType, std::vector<uint8_t>>;
+      const size_t message_size) const
+      -> std::tuple<bool,
+                    MessageIdType,
+                    ProcessIdType,
+                    // TODO: dont allocate vectors but return pointers into
+                    // message?
+                    std::vector<std::vector<uint8_t>>>;
 };
+
+template <typename... Data, class>
+inline auto PerfectLink::_prepare_message(const MessageIdType seq_nr,
+                                          const bool is_ack,
+                                          Data... datas) const
+    -> std::tuple<std::array<uint8_t, MAX_MESSAGE_SIZE>, std::size_t> {
+  const auto message_size = 1 + sizeof(MessageIdType) + sizeof(ProcessIdType) +
+                            (std::get<1>(datas) + ... + 0) +
+                            (sizeof...(Data) * sizeof(MessageSizeType));
+  if (message_size > MAX_MESSAGE_SIZE) {
+    throw std::runtime_error("Message is too large");
+  }
+
+  // message = [is_ack, ...seq_nr, ...process_id, ...[data_length, ...data]]
+  std::array<uint8_t, MAX_MESSAGE_SIZE> message;
+  message[0] = static_cast<uint8_t>(is_ack);
+  for (size_t i = 0; i < sizeof(MessageIdType); i++) {
+    message[i + 1] = (seq_nr >> (8 * i)) & 0xff;
+  }
+  message[1 + sizeof(MessageIdType)] = _id;
+  auto offset = 1 + sizeof(MessageIdType) + sizeof(ProcessIdType);
+
+  if constexpr (sizeof...(Data) > 0) {
+    for (const auto& [data, length] : {datas...}) {
+      for (size_t i = 0; i < sizeof(MessageSizeType); i++) {
+        message[offset++] = (length >> (8 * i)) & 0xff;
+      }
+      std::memcpy(message.data() + offset, data, length);
+      offset += length;
+    }
+  }
+
+  return {message, message_size};
+}
+
+template <typename... Data, class>
+auto PerfectLink::send(const in_addr_t host,
+                       const in_port_t port,
+                       Data... datas) -> void {
+  if (!_sock_fd.has_value()) {
+    throw std::runtime_error("Cannot send if not bound");
+  }
+  auto sock_fd = _sock_fd.value();
+
+  auto [message, message_size] = _prepare_message(_seq_nr, false, datas...);
+
+  sockaddr_in addr;
+  std::memset(&addr, 0, sizeof(addr));
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = host;
+  addr.sin_port = port;
+
+  perror_check(sendto(sock_fd, message.data(), message_size, 0,
+                      reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0,
+               "failed to send message");
+  std::lock_guard<std::mutex> guard(_pending_for_ack_mutex);
+  _pending_for_ack.try_emplace(_seq_nr, addr, message, message_size);
+  _seq_nr += 1;
+}

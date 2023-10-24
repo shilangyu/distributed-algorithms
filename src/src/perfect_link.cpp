@@ -1,7 +1,9 @@
 #include "perfect_link.hpp"
 #include <unistd.h>
-#include <cstring>
 #include "common.hpp"
+
+// TODO: syscall interupts other threads which causes them to panic on
+// perror_check
 
 const auto& socket_bind = bind;
 
@@ -39,74 +41,33 @@ auto PerfectLink::bind(const in_addr_t host, const in_port_t port) -> void {
   _sock_fd = sock_fd;
 }
 
-inline auto PerfectLink::_prepare_message(const MessageIdType seq_nr,
-                                          const uint8_t* data,
-                                          const std::size_t data_length,
-                                          const bool is_ack) const
-    -> std::tuple<std::array<uint8_t, MAX_MESSAGE_SIZE>, std::size_t> {
-  if (1 + sizeof(MessageIdType) + sizeof(ProcessIdType) + data_length >
-      MAX_MESSAGE_SIZE) {
-    throw std::runtime_error("Message is too large");
-  }
-
-  // message = [is_ack, ...seq_nr, ...process_id, ...data]
-  std::array<uint8_t, MAX_MESSAGE_SIZE> message;
-  message[0] = static_cast<uint8_t>(is_ack);
-  for (size_t i = 0; i < sizeof(MessageIdType); i++) {
-    message[i + 1] = (seq_nr >> (8 * i)) & 0xff;
-  }
-  message[1 + sizeof(MessageIdType)] = _id;
-  if (data_length != 0) {
-    std::memcpy(
-        message.data() + 1 + sizeof(MessageIdType) + sizeof(ProcessIdType),
-        data, data_length);
-  }
-
-  return {message,
-          1 + sizeof(MessageIdType) + sizeof(ProcessIdType) + data_length};
-}
-
 inline auto PerfectLink::_decode_message(
     const std::array<uint8_t, MAX_MESSAGE_SIZE> message,
-    const ssize_t message_size) const
-    -> std::tuple<bool, MessageIdType, ProcessIdType, std::vector<uint8_t>> {
-  std::vector<uint8_t> data(
-      message.data() + 1 + sizeof(MessageIdType) + sizeof(ProcessIdType),
-      message.data() + message_size);
-
+    const size_t message_size) const
+    -> std::tuple<bool,
+                  MessageIdType,
+                  ProcessIdType,
+                  std::vector<std::vector<uint8_t>>> {
+  bool is_ack = static_cast<bool>(message[0]);
   MessageIdType seq_nr = 0;
   for (size_t i = 0; i < sizeof(MessageIdType); i++) {
     seq_nr |= static_cast<MessageIdType>(message[i + 1]) << (8 * i);
   }
   ProcessIdType process_id = message[1 + sizeof(MessageIdType)];
 
-  return {static_cast<bool>(message[0]), seq_nr, process_id, data};
-}
-
-auto PerfectLink::send(const in_addr_t host,
-                       const in_port_t port,
-                       const uint8_t* data,
-                       const std::size_t data_length) -> void {
-  if (!_sock_fd.has_value()) {
-    throw std::runtime_error("Cannot send if not bound");
+  std::vector<std::vector<uint8_t>> datas;
+  auto offset = 1 + sizeof(MessageIdType) + sizeof(ProcessIdType);
+  while (offset < message_size) {
+    size_t length = 0;
+    for (size_t i = 0; i < sizeof(MessageSizeType); i++) {
+      length |= static_cast<size_t>(message[offset++]) << (8 * i);
+    }
+    datas.emplace_back(message.data() + offset,
+                       message.data() + offset + length);
+    offset += length;
   }
-  auto sock_fd = _sock_fd.value();
 
-  auto [message, message_size] =
-      _prepare_message(_seq_nr, data, data_length, false);
-
-  sockaddr_in addr;
-  std::memset(&addr, 0, sizeof(addr));
-  addr.sin_family = AF_INET;
-  addr.sin_addr.s_addr = host;
-  addr.sin_port = port;
-
-  perror_check(sendto(sock_fd, message.data(), message_size, 0,
-                      reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0,
-               "failed to send message");
-  std::lock_guard<std::mutex> guard(_pending_for_ack_mutex);
-  _pending_for_ack.try_emplace(_seq_nr, addr, message, message_size);
-  _seq_nr += 1;
+  return {is_ack, seq_nr, process_id, datas};
 }
 
 auto PerfectLink::listen(ListenCallback callback) -> std::thread {
@@ -146,8 +107,8 @@ auto PerfectLink::listen(ListenCallback callback) -> std::thread {
       }
       perror_check(message_size < 0, "failed to receive message");
 
-      auto [is_ack, seq_nr, process_id, data] =
-          _decode_message(message, message_size);
+      auto [is_ack, seq_nr, process_id, datas] =
+          _decode_message(message, static_cast<size_t>(message_size));
 
       if (is_ack) {
         // mark a sent message as being acknowledged, we will no longer be
@@ -159,13 +120,14 @@ auto PerfectLink::listen(ListenCallback callback) -> std::thread {
         if (auto iter = _delivered.find({process_id, seq_nr});
             iter == _delivered.end()) {
           // we have not yet delivered the message, do it now
-          callback(process_id, data);
+          for (auto data : datas) {
+            callback(process_id, data);
+          }
           _delivered.emplace(process_id, seq_nr);
         }
 
         // send an ACK
-        auto [ack_message, ack_message_size] =
-            _prepare_message(seq_nr, nullptr, 0, true);
+        auto [ack_message, ack_message_size] = _prepare_message(seq_nr, true);
         perror_check(sendto(sock_fd, ack_message.data(), ack_message_size, 0,
                             reinterpret_cast<sockaddr*>(&sender_addr),
                             sender_addr_len) < 0,

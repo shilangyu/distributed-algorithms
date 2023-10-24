@@ -4,7 +4,7 @@ set -e
 
 ./build.sh &> /dev/null
 
-MESSAGES=1000
+MESSAGES=10000
 PROCESSES=100
 RUN_FOLDER=$(mktemp -d)
 HOSTS_FILE=$RUN_FOLDER/hosts
