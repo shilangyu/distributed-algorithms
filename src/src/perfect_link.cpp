@@ -3,8 +3,6 @@
 #include <cstring>
 #include "common.hpp"
 
-// TODO: syscalls are interupted by signal and cause panics
-
 const auto& socket_bind = bind;
 
 PerfectLink::PerfectLink(const ProcessIdType id) : _id(id) {}

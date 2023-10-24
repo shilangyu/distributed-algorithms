@@ -4,7 +4,7 @@ set -e
 
 ./build.sh &> /dev/null
 
-MESSAGES=100
+MESSAGES=1000
 PROCESSES=100
 RUN_FOLDER=$(mktemp -d)
 HOSTS_FILE=$RUN_FOLDER/hosts
@@ -27,7 +27,7 @@ done
 echo $MESSAGES" 1" > $CONFIG_FILE
 
 
-# start 100 processes
+# start all processes
 PIDS=()
 for i in $(seq 1 $PROCESSES)
 do
@@ -36,15 +36,15 @@ do
 done
 
 
-# give processes 3 seconds
+# give processes some time to run
 sleep 3
 
 # send SIGTERM to all
-for pid in "${PIDS[@]}"
+for key in "${!PIDS[@]}"
 do
+	pid=${PIDS[$key]}
   kill -s TERM $pid
-	wait $pid || true
-	# TODO: collect exit codes
+	wait $pid || echo "Process "$(($key + 1))" exited with "$?
 done
 
 delivered=$(cat $OUTPUTS/1.out | wc -l | xargs)
