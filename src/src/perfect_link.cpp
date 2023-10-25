@@ -117,8 +117,7 @@ auto PerfectLink::listen(ListenCallback callback) -> std::thread {
         _pending_for_ack.erase(seq_nr);
       } else {
         // we received a potentially new message
-        if (auto iter = _delivered.find({process_id, seq_nr});
-            iter == _delivered.end()) {
+        if (_delivered.find({process_id, seq_nr}) == _delivered.end()) {
           // we have not yet delivered the message, do it now
           for (auto data : datas) {
             callback(process_id, data);
