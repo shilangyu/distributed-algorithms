@@ -47,11 +47,13 @@ class PerfectLink {
 
   /// @brief Sends a message from this link to a chosen host and port. The
   /// data has to be smaller than about 64KiB. Sending is possible only
-  /// after performing a bind.
+  /// after performing a bind. At most 8 messages can be packed in
+  /// a single packet.
   template <
       typename... Data,
       class = std::enable_if_t<
-          are_equal<std::tuple<std::uint8_t*, std::size_t>, Data...>::value>>
+          are_equal<std::tuple<std::uint8_t*, std::size_t>, Data...>::value>,
+      class = std::enable_if_t<(sizeof...(Data) <= 8)>>
   auto send(const in_addr_t host, const in_port_t port, Data... datas) -> void;
 
  private:
@@ -159,7 +161,7 @@ inline auto PerfectLink::_prepare_message(const MessageIdType seq_nr,
   return {message, message_size};
 }
 
-template <typename... Data, class>
+template <typename... Data, class, class>
 auto PerfectLink::send(const in_addr_t host,
                        const in_port_t port,
                        Data... datas) -> void {
