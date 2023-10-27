@@ -75,7 +75,7 @@ int main(int argc, char** argv) {
     // we are the receiver process
     // preallocate about 16MiB for delivery logs
     delivered.reserve(16 * (1 << 20) / sizeof(Delivered));
-    auto listen_handle = link.listen([](auto process_id, auto data) {
+    auto listen_handle = link.listen([](auto process_id, auto& data) {
       SendType msg = 0;
       for (size_t i = 0; i < sizeof(SendType); i++) {
         msg |= static_cast<SendType>(data[i]) << (i * 8);
@@ -94,7 +94,7 @@ int main(int argc, char** argv) {
       throw std::runtime_error("Receiver host not defined in hosts file");
     }
     auto resend_handle = link.listen(
-        []([[maybe_unused]] auto process_id, [[maybe_unused]] auto data) {});
+        []([[maybe_unused]] auto process_id, [[maybe_unused]] auto& data) {});
 
     // we are a sender process
     // pack 8 datas in one message

@@ -8,6 +8,7 @@
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
+#include <vector>
 
 inline auto perror_check(const bool error_condition,
                          const std::string_view message) -> void {
@@ -49,4 +50,41 @@ class Perf {
  private:
   std::mutex _lock;
   std::unordered_map<std::string, std::tuple<double, double>> _cums;
+};
+
+/// @brief Convenience type storing a pointer and size.
+/// @tparam T
+template <typename T>
+struct Slice {
+  Slice(const T* data, const std::size_t size) : _data(data), _size(size) {}
+
+  /// Allocates to create an owned type of the underlying data.
+  auto to_owned() const -> std::vector<T> {
+    return std::vector(_data, _data + _size);
+  }
+
+  inline auto operator[](const std::size_t i) const -> const T& {
+    return _data[i];
+  }
+
+  inline auto size() const -> std::size_t { return _size; }
+
+ private:
+  const T* _data;
+  const std::size_t _size;
+};
+
+/// @brief An owned variant of a slice. Owned does not mean unique. It means
+/// this slice cannot be moved or copied: there is a single owner of this
+/// structure, not of the underlying data.
+/// @tparam T
+template <typename T>
+struct OwnedSlice : public Slice<T> {
+  OwnedSlice(const T* data, const std::size_t size) : Slice<T>(data, size) {}
+  OwnedSlice(const Slice<T> slice) : Slice<T>(slice) {}
+
+  OwnedSlice(const OwnedSlice&) = delete;
+  OwnedSlice& operator=(const OwnedSlice&) = delete;
+  OwnedSlice(OwnedSlice&&) = delete;
+  OwnedSlice& operator=(OwnedSlice&&) = delete;
 };

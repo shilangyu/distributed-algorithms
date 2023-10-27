@@ -27,6 +27,8 @@ class PerfectLink {
   /// @brief The type used to store ID of a process.
   using ProcessIdType = std::uint8_t;
 
+  static constexpr std::uint8_t MAX_MESSAGE_COUNT_IN_PACKET = 8;
+
   PerfectLink(const ProcessIdType id);
 
   /// @brief If the link was bound to a socket, destructor will close the
@@ -37,7 +39,7 @@ class PerfectLink {
   auto bind(const in_addr_t host, const in_port_t port) -> void;
 
   using ListenCallback = std::function<
-      auto(ProcessIdType process_id, std::vector<uint8_t> data)->void>;
+      auto(ProcessIdType process_id, OwnedSlice<std::uint8_t>& data)->void>;
 
   /// @brief Starts listening to incoming messages. Sends ACKs for new messages.
   /// Receives ACKs and resends messages with missing ACKs.
@@ -53,7 +55,8 @@ class PerfectLink {
       typename... Data,
       class = std::enable_if_t<
           are_equal<std::tuple<std::uint8_t*, std::size_t>, Data...>::value>,
-      class = std::enable_if_t<(sizeof...(Data) <= 8)>>
+      class =
+          std::enable_if_t<(sizeof...(Data) <= MAX_MESSAGE_COUNT_IN_PACKET)>>
   auto send(const in_addr_t host, const in_port_t port, Data... datas) -> void;
 
  private:
@@ -114,17 +117,14 @@ class PerfectLink {
                                Data... datas) const
       -> std::tuple<std::array<uint8_t, MAX_MESSAGE_SIZE>, std::size_t>;
 
-  /// @brief Given a message from network decodes it to data.
-  /// @return is_ack, seq_nr, process_id, data
+  /// @brief Given a message from network decodes it to data. `data_buffer` will
+  /// contain pointers into `message`.
+  /// @return is_ack, seq_nr, process_id, filled data_buffer
   inline auto _decode_message(
-      const std::array<uint8_t, MAX_MESSAGE_SIZE> message,
-      const size_t message_size) const
-      -> std::tuple<bool,
-                    MessageIdType,
-                    ProcessIdType,
-                    // TODO: dont allocate vectors but return pointers into
-                    // message?
-                    std::vector<std::vector<uint8_t>>>;
+      const std::array<uint8_t, MAX_MESSAGE_SIZE>& message,
+      const size_t message_size,
+      std::vector<Slice<uint8_t>>& data_buffer) const
+      -> std::tuple<bool, MessageIdType, ProcessIdType>;
 };
 
 template <typename... Data, class>

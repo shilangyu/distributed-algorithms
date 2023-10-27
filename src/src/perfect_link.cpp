@@ -42,12 +42,10 @@ auto PerfectLink::bind(const in_addr_t host, const in_port_t port) -> void {
 }
 
 inline auto PerfectLink::_decode_message(
-    const std::array<uint8_t, MAX_MESSAGE_SIZE> message,
-    const size_t message_size) const
-    -> std::tuple<bool,
-                  MessageIdType,
-                  ProcessIdType,
-                  std::vector<std::vector<uint8_t>>> {
+    const std::array<uint8_t, MAX_MESSAGE_SIZE>& message,
+    const size_t message_size,
+    std::vector<Slice<uint8_t>>& data_buffer) const
+    -> std::tuple<bool, MessageIdType, ProcessIdType> {
   bool is_ack = static_cast<bool>(message[0]);
   MessageIdType seq_nr = 0;
   for (size_t i = 0; i < sizeof(MessageIdType); i++) {
@@ -55,19 +53,18 @@ inline auto PerfectLink::_decode_message(
   }
   ProcessIdType process_id = message[1 + sizeof(MessageIdType)];
 
-  std::vector<std::vector<uint8_t>> datas;
+  data_buffer.clear();
   auto offset = 1 + sizeof(MessageIdType) + sizeof(ProcessIdType);
   while (offset < message_size) {
     size_t length = 0;
     for (size_t i = 0; i < sizeof(MessageSizeType); i++) {
       length |= static_cast<size_t>(message[offset++]) << (8 * i);
     }
-    datas.emplace_back(message.data() + offset,
-                       message.data() + offset + length);
+    data_buffer.emplace_back(message.data() + offset, length);
     offset += length;
   }
 
-  return {is_ack, seq_nr, process_id, datas};
+  return {is_ack, seq_nr, process_id};
 }
 
 auto PerfectLink::listen(ListenCallback callback) -> std::thread {
@@ -78,6 +75,8 @@ auto PerfectLink::listen(ListenCallback callback) -> std::thread {
 
   std::thread listener([sock_fd, callback, this]() {
     std::array<uint8_t, MAX_MESSAGE_SIZE> message;
+    std::vector<Slice<std::uint8_t>> data_buffer;
+    data_buffer.reserve(MAX_MESSAGE_COUNT_IN_PACKET);
 
     sockaddr_in sender_addr;
     std::memset(&sender_addr, 0, sizeof(sender_addr));
@@ -107,8 +106,8 @@ auto PerfectLink::listen(ListenCallback callback) -> std::thread {
       }
       perror_check(message_size < 0, "failed to receive message");
 
-      auto [is_ack, seq_nr, process_id, datas] =
-          _decode_message(message, static_cast<size_t>(message_size));
+      auto [is_ack, seq_nr, process_id] = _decode_message(
+          message, static_cast<size_t>(message_size), data_buffer);
 
       if (is_ack) {
         // mark a sent message as being acknowledged, we will no longer be
@@ -119,8 +118,9 @@ auto PerfectLink::listen(ListenCallback callback) -> std::thread {
         // we received a potentially new message
         if (_delivered.find({process_id, seq_nr}) == _delivered.end()) {
           // we have not yet delivered the message, do it now
-          for (auto data : datas) {
-            callback(process_id, data);
+          for (auto& data : data_buffer) {
+            OwnedSlice owned = data;
+            callback(process_id, owned);
           }
           _delivered.emplace(process_id, seq_nr);
         }
