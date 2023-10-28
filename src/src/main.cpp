@@ -2,6 +2,7 @@
 #include <chrono>
 #include <csignal>
 #include <iostream>
+#include <mutex>
 #include <thread>
 #include <vector>
 #include "common.hpp"
@@ -12,6 +13,7 @@ using SendType = std::uint32_t;
 using Delivered = std::tuple<PerfectLink::ProcessIdType, SendType>;
 
 SendType sent_amount = 0;
+std::mutex delivered_mutex;
 std::vector<Delivered> delivered;
 std::ofstream output;
 
@@ -33,10 +35,8 @@ static void stop(int) {
                       [](auto res) { return res == SIG_ERR; },
                       "reset SIGINT signal handler", true);
 
-  // immediately stop network packet processing
-  std::cout << "TODO Immediately stopping network packet processing.\n";
-
   // write output file
+  std::lock_guard<std::mutex> lock(delivered_mutex);
   if (output.is_open()) {
     for (SendType n = 1; n <= sent_amount; n++) {
       output << "b " << n << std::endl;
@@ -85,6 +85,7 @@ int main(int argc, char** argv) {
         msg |= static_cast<SendType>(data[i]) << (i * 8);
       }
 
+      std::lock_guard<std::mutex> guard(delivered_mutex);
       delivered.emplace_back(process_id, msg);
       if (delivered.capacity() == delivered.size()) {
         // we are at full capacity, flush the buffer to the file
