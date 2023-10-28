@@ -26,10 +26,12 @@ static auto write_delivered() -> void {
 
 static void stop(int) {
   // reset signal handlers to default
-  perror_check(std::signal(SIGTERM, SIG_DFL) == SIG_ERR,
-               "reset SIGTERM signal handler");
-  perror_check(std::signal(SIGINT, SIG_DFL) == SIG_ERR,
-               "reset SIGINT signal handler");
+  perror_check<sig_t>([] { return std::signal(SIGTERM, SIG_DFL); },
+                      [](auto res) { return res == SIG_ERR; },
+                      "reset SIGTERM signal handler", true);
+  perror_check<sig_t>([] { return std::signal(SIGINT, SIG_DFL); },
+                      [](auto res) { return res == SIG_ERR; },
+                      "reset SIGINT signal handler", true);
 
   // immediately stop network packet processing
   std::cout << "TODO Immediately stopping network packet processing.\n";
@@ -47,10 +49,12 @@ static void stop(int) {
 }
 
 int main(int argc, char** argv) {
-  perror_check(std::signal(SIGTERM, stop) == SIG_ERR,
-               "set SIGTERM signal handler");
-  perror_check(std::signal(SIGINT, stop) == SIG_ERR,
-               "set SIGINT signal handler");
+  perror_check<sig_t>([] { return std::signal(SIGTERM, stop); },
+                      [](auto res) { return res == SIG_ERR; },
+                      "set SIGTERM signal handler", true);
+  perror_check<sig_t>([] { return std::signal(SIGINT, stop); },
+                      [](auto res) { return res == SIG_ERR; },
+                      "set SIGINT signal handler", true);
 
   // `true` means that a config file is required.
   // Call with `false` if no config file is necessary.

@@ -2,16 +2,15 @@
 #include <unistd.h>
 #include "common.hpp"
 
-// TODO: syscall interupts other threads which causes them to panic on
-// perror_check
-
 const auto& socket_bind = bind;
 
 PerfectLink::PerfectLink(const ProcessIdType id) : _id(id) {}
 
 PerfectLink::~PerfectLink() {
   if (_sock_fd.has_value()) {
-    perror_check(close(_sock_fd.value()) < 0, "failed to close socket");
+    perror_check<int>([this] { return close(_sock_fd.value()); },
+                      [](auto res) { return res < 0; },
+                      "failed to close socket");
   }
   _done = true;
 }
@@ -21,8 +20,9 @@ auto PerfectLink::bind(const in_addr_t host, const in_port_t port) -> void {
     throw std::runtime_error("Cannot bind a link twice");
   }
 
-  int sock_fd = socket(PF_INET, SOCK_DGRAM, 0);
-  perror_check(sock_fd < 0, "socket creation failure");
+  int sock_fd = perror_check<int>(
+      []() { return socket(PF_INET, SOCK_DGRAM, 0); },
+      [](auto res) { return res < 0; }, "socket creation failure", true);
 
   sockaddr_in addr;
   std::memset(&addr, 0, sizeof(addr));
@@ -30,13 +30,19 @@ auto PerfectLink::bind(const in_addr_t host, const in_port_t port) -> void {
   addr.sin_addr.s_addr = host;
   addr.sin_port = port;
 
-  perror_check(socket_bind(sock_fd, reinterpret_cast<sockaddr*>(&addr),
-                           sizeof(addr)) < 0,
-               "failed to bind socket");
+  perror_check<int>(
+      [&] {
+        return socket_bind(sock_fd, reinterpret_cast<sockaddr*>(&addr),
+                           sizeof(addr));
+      },
+      [](auto res) { return res < 0; }, "failed to bind socket", true);
 
-  perror_check(setsockopt(sock_fd, SOL_SOCKET, SO_RCVTIMEO, &RESEND_TIMEOUT,
-                          sizeof(RESEND_TIMEOUT)) < 0,
-               "failed to set socket timeout");
+  perror_check<int>(
+      [sock_fd] {
+        return setsockopt(sock_fd, SOL_SOCKET, SO_RCVTIMEO, &RESEND_TIMEOUT,
+                          sizeof(RESEND_TIMEOUT));
+      },
+      [](auto res) { return res < 0; }, "failed to set socket timeout", true);
 
   _sock_fd = sock_fd;
 }
@@ -44,7 +50,7 @@ auto PerfectLink::bind(const in_addr_t host, const in_port_t port) -> void {
 inline auto PerfectLink::_decode_message(
     const std::array<uint8_t, MAX_MESSAGE_SIZE>& message,
     const size_t message_size,
-    std::vector<Slice<uint8_t>>& data_buffer) const
+    std::vector<Slice<uint8_t>>& data_buffer)
     -> std::tuple<bool, MessageIdType, ProcessIdType> {
   bool is_ack = static_cast<bool>(message[0]);
   MessageIdType seq_nr = 0;
@@ -92,19 +98,31 @@ auto PerfectLink::listen(ListenCallback callback) -> std::thread {
         return;
       }
 
+      if (message_size < 0 && errno == EINTR) {
+        // got interrupted, try again
+        continue;
+      }
+
       if (message_size < 0 && errno == EAGAIN) {
         // timed out, resend messages without ACKs
         std::lock_guard<std::mutex> guard(_pending_for_ack_mutex);
         for (auto& [seq_nr, pending] : _pending_for_ack) {
-          perror_check(
-              sendto(sock_fd, pending.message.data(), pending.message_size, 0,
-                     reinterpret_cast<const sockaddr*>(&pending.addr),
-                     sizeof(pending.addr)) < 0,
-              "failed to resend message");
+          perror_check<ssize_t>(
+              [&, &seq_nr = seq_nr, &pending = pending] {
+                return sendto(sock_fd, pending.message.data(),
+                              pending.message_size, 0,
+                              reinterpret_cast<const sockaddr*>(&pending.addr),
+                              sizeof(pending.addr));
+              },
+              [](auto res) { return res < 0; }, "failed to resend message");
         }
         continue;
       }
-      perror_check(message_size < 0, "failed to receive message");
+
+      if (message_size < 0) {
+        perror("failed to receive message");
+        continue;
+      }
 
       auto [is_ack, seq_nr, process_id] = _decode_message(
           message, static_cast<size_t>(message_size), data_buffer);
@@ -130,10 +148,14 @@ auto PerfectLink::listen(ListenCallback callback) -> std::thread {
 
         // send an ACK
         auto [ack_message, ack_message_size] = _prepare_message(seq_nr, true);
-        perror_check(sendto(sock_fd, ack_message.data(), ack_message_size, 0,
+        perror_check<ssize_t>(
+            [&, &ack_message = ack_message,
+             &ack_message_size = ack_message_size] {
+              return sendto(sock_fd, ack_message.data(), ack_message_size, 0,
                             reinterpret_cast<sockaddr*>(&sender_addr),
-                            sender_addr_len) < 0,
-                     "failed to send ack");
+                            sender_addr_len);
+            },
+            [](auto res) { return res < 0; }, "failed to send ack");
       }
     }
   });

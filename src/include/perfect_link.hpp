@@ -123,10 +123,10 @@ class PerfectLink {
   /// @brief Given a message from network decodes it to data. `data_buffer` will
   /// contain pointers into `message`.
   /// @return is_ack, seq_nr, process_id, filled data_buffer
-  inline auto _decode_message(
+  static inline auto _decode_message(
       const std::array<uint8_t, MAX_MESSAGE_SIZE>& message,
       const size_t message_size,
-      std::vector<Slice<uint8_t>>& data_buffer) const
+      std::vector<Slice<uint8_t>>& data_buffer)
       -> std::tuple<bool, MessageIdType, ProcessIdType>;
 };
 
@@ -181,13 +181,20 @@ auto PerfectLink::send(const in_addr_t host,
   addr.sin_addr.s_addr = host;
   addr.sin_port = port;
 
-  std::unique_lock lock(_pending_for_ack_mutex);
-  _pending_for_ack_cv.wait(
-      lock, [this] { return _pending_for_ack.size() < MAX_IN_FLIGHT; });
+  {
+    std::unique_lock lock(_pending_for_ack_mutex);
+    _pending_for_ack_cv.wait(
+        lock, [this] { return _pending_for_ack.size() < MAX_IN_FLIGHT; });
+  }
 
-  perror_check(sendto(sock_fd, message.data(), message_size, 0,
-                      reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0,
-               "failed to send message");
+  perror_check<ssize_t>(
+      [&, &message = message, &message_size = message_size] {
+        return sendto(sock_fd, message.data(), message_size, 0,
+                      reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+      },
+      [](auto res) { return res < 0; }, "failed to send message", true);
+
+  std::lock_guard lock(_pending_for_ack_mutex);
   _pending_for_ack.try_emplace(_seq_nr, addr, message, message_size);
   _seq_nr += 1;
 }

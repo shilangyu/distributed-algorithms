@@ -2,6 +2,7 @@
 
 #include <cerrno>
 #include <chrono>
+#include <functional>
 #include <iostream>
 #include <mutex>
 #include <stdexcept>
@@ -10,12 +11,39 @@
 #include <unordered_map>
 #include <vector>
 
-inline auto perror_check(const bool error_condition,
-                         const std::string_view message) -> void {
-  if (error_condition) {
+/// @brief A helper for calling syscalls. Syscalls can be interrupted, and such
+/// calls are restarted automatically. If a syscall fails, a corresponding error
+/// is printed.
+/// @param abort_on_error If true, a failed syscall causes an abort. In debug
+/// mode it is by default true, otherwise false.
+/// @return The returned value is the value returned from the syscall. Aborting
+/// on error depends on the abort_on_error flag, the returned value might be an
+/// error value.
+template <typename T>
+inline auto perror_check(const std::function<auto()->T> syscall,
+                         const std::function<auto(T)->bool> error_condition,
+                         const std::string_view message,
+                         const bool abort_on_error =
+#ifdef NDEBUG
+                             false
+#else
+                             true
+#endif
+
+                         ) -> T {
+  T res;
+  do {
+    res = syscall();
+  } while (error_condition(res) && errno == EINTR);
+
+  if (error_condition(res)) {
     perror(message.data());
-    throw std::runtime_error("panic");
+    if (abort_on_error) {
+      abort();
+    }
   }
+
+  return res;
 }
 
 template <typename T, typename... U>
