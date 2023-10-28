@@ -5,6 +5,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstring>
 #include <functional>
@@ -69,6 +70,7 @@ class PerfectLink {
   static constexpr std::size_t MAX_MESSAGE_SIZE =
       std::numeric_limits<MessageSizeType>::max();
   static constexpr timeval RESEND_TIMEOUT = {0, 200000};
+  static constexpr std::uint16_t MAX_IN_FLIGHT = 512;
 
   /// @brief Data structure to hold temporary data of a message that was sent
   /// but where no ACK for it was yet received.
@@ -100,9 +102,10 @@ class PerfectLink {
   /// @brief Map of sent messages that have not yet sent back an ACK.
   std::unordered_map<MessageIdType, PendingMessage> _pending_for_ack = {};
   std::mutex _pending_for_ack_mutex;
+  std::condition_variable _pending_for_ack_cv;
   /// @brief A map of messages that have been delivered.
   std::unordered_set<std::tuple<ProcessIdType, MessageIdType>, hash_delivered>
-      _delivered = {};
+      _delivered = {};  // TODO: this grows indefinitely
   /// @brief Flag indicating whether this link should do no more work.
   std::atomic_bool _done = false;
 
@@ -178,10 +181,13 @@ auto PerfectLink::send(const in_addr_t host,
   addr.sin_addr.s_addr = host;
   addr.sin_port = port;
 
+  std::unique_lock lock(_pending_for_ack_mutex);
+  _pending_for_ack_cv.wait(
+      lock, [this] { return _pending_for_ack.size() < MAX_IN_FLIGHT; });
+
   perror_check(sendto(sock_fd, message.data(), message_size, 0,
                       reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0,
                "failed to send message");
-  std::lock_guard<std::mutex> guard(_pending_for_ack_mutex);
   _pending_for_ack.try_emplace(_seq_nr, addr, message, message_size);
   _seq_nr += 1;
 }

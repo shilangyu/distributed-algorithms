@@ -112,8 +112,11 @@ auto PerfectLink::listen(ListenCallback callback) -> std::thread {
       if (is_ack) {
         // mark a sent message as being acknowledged, we will no longer be
         // sending it
-        std::lock_guard<std::mutex> guard(_pending_for_ack_mutex);
-        _pending_for_ack.erase(seq_nr);
+        {
+          std::lock_guard<std::mutex> guard(_pending_for_ack_mutex);
+          _pending_for_ack.erase(seq_nr);
+        }
+        _pending_for_ack_cv.notify_one();
       } else {
         // we received a potentially new message
         if (_delivered.find({process_id, seq_nr}) == _delivered.end()) {
