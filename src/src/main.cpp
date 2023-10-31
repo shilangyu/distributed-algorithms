@@ -106,6 +106,7 @@ int main(int argc, char** argv) {
     constexpr auto pack = 8;
     std::array<uint8_t, pack * sizeof(SendType)> msg;
     for (SendType n = pack; n <= m; n += 8) {
+      sent_amount = n;
       for (size_t j = 1; j <= pack; j++) {
         for (size_t i = 0; i < sizeof(SendType); i++) {
           msg[(j - 1) * sizeof(SendType) + i] =
@@ -123,17 +124,16 @@ int main(int argc, char** argv) {
           std::make_tuple(msg.data() + 5 * sizeof(SendType), sizeof(SendType)),
           std::make_tuple(msg.data() + 6 * sizeof(SendType), sizeof(SendType)),
           std::make_tuple(msg.data() + 7 * sizeof(SendType), sizeof(SendType)));
-      sent_amount = n;
     }
     // send rest individually
     for (SendType n = sent_amount + 1; n <= m; n++) {
+      sent_amount = n;
       for (size_t i = 0; i < sizeof(SendType); i++) {
         msg[i] = (n >> (i * 8)) & 0xff;
       }
 
       link.send(receiverHost.value().ip, receiverHost.value().port,
                 std::make_tuple(msg.data(), sizeof(SendType)));
-      sent_amount = n;
     }
 
     resend_handle.join();

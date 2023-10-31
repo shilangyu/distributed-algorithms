@@ -13,7 +13,7 @@ RUN dpkg-reconfigure --frontend=noninteractive tzdata
 RUN apt-get -y install file unzip zip xz-utils git \
                          gcc g++ cmake \
                          python3 \
-                         iproute2
+                         iproute2 bc neovim
 
 COPY . /root/
 

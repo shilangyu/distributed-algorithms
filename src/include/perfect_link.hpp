@@ -105,7 +105,7 @@ class PerfectLink {
   std::condition_variable _pending_for_ack_cv;
   /// @brief A map of messages that have been delivered.
   std::unordered_set<std::tuple<ProcessIdType, MessageIdType>, hash_delivered>
-      _delivered = {};  // TODO: this grows indefinitely
+      _delivered = {};
   /// @brief Flag indicating whether this link should do no more work.
   std::atomic_bool _done = false;
 
