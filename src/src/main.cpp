@@ -12,21 +12,74 @@
 using SendType = std::uint32_t;
 using Delivered = std::tuple<PerfectLink::ProcessIdType, SendType>;
 
-SendType sent_amount = 0;
-std::mutex delivered_mutex;
-std::vector<Delivered> delivered;
-std::ofstream output;
-
-static auto write_delivered() -> void {
-  if (output.is_open()) {
-    for (auto& [process_id, msg] : delivered) {
-      output << "d " << +process_id << " " << msg << std::endl;
-    }
-    delivered.clear();
+struct Logger {
+  inline auto reserve_delivered_memory(const std::size_t bytes) -> void {
+    _delivered_buffer.reserve(bytes / sizeof(Delivered));
   }
-}
+
+  inline auto deliver(PerfectLink::ProcessIdType process_id, SendType msg) {
+    std::lock_guard<std::mutex> lock(_mutex);
+    _delivered_buffer.emplace_back(process_id, msg);
+    // UB: we might be interrupted during a write. Then, we are in a very bad
+    // state. In practice, we were promised that logs won't be larger than
+    // 16MiB, so this write should never happen. Additionally getting
+    // interrupted during a write is highly unlikely, as a write happend about
+    // once every 2 million deliveries.
+    if (_delivered_buffer.capacity() == _delivered_buffer.size()) {
+      // we are at full capacity, flush the buffer to the file
+      write();
+      _delivered_buffer.clear();
+      _delivered_size = 0;
+    } else {
+      _delivered_size.fetch_add(1);
+    }
+  }
+
+  inline auto write() -> void {
+    if (_output.is_open()) {
+      const auto& [sent_amount, delivered_size] =
+          _frozen.value_or(std::make_tuple(
+              _sent_amount, static_cast<std::uint32_t>(_delivered_size)));
+
+      for (size_t i = 0; i < delivered_size; i++) {
+        auto& [process_id, msg] = _delivered_buffer[i];
+        _output << "d " << +process_id << " " << msg << std::endl;
+      }
+
+      for (SendType n = 1; n <= sent_amount; n++) {
+        _output << "b " << n << std::endl;
+      }
+    }
+  }
+
+  inline auto freeze() -> void { _frozen = {_sent_amount, _delivered_size}; }
+
+  inline auto set_sent_amount(const SendType sent_amount) -> void {
+    _sent_amount = sent_amount;
+  }
+
+  inline auto sent_amount() const -> SendType { return _sent_amount; }
+
+  inline auto open(const std::string path) -> void { _output.open(path); }
+
+ private:
+  /// @brief The size of buffer won't actually indicate the size. We separately
+  /// store an atomic size to update it after a write happened. When an
+  /// interrupt happens we then know how many logs where actually fully written.
+  std::atomic_uint32_t _delivered_size = 0;
+  std::vector<Delivered> _delivered_buffer;
+  std::mutex _mutex;
+  std::ofstream _output;
+  SendType _sent_amount = 0;
+  std::optional<std::tuple<SendType, std::uint32_t>> _frozen = std::nullopt;
+};
+
+Logger logger;
 
 static void stop(int) {
+  // freeze creation of new logs
+  logger.freeze();
+
   // reset signal handlers to default
   perror_check<sig_t>([] { return std::signal(SIGTERM, SIG_DFL); },
                       [](auto res) { return res == SIG_ERR; },
@@ -36,13 +89,7 @@ static void stop(int) {
                       "reset SIGINT signal handler", true);
 
   // write output file
-  std::lock_guard<std::mutex> lock(delivered_mutex);
-  if (output.is_open()) {
-    for (SendType n = 1; n <= sent_amount; n++) {
-      output << "b " << n << std::endl;
-    }
-  }
-  write_delivered();
+  logger.write();
 
   // exit directly from signal handler
   exit(0);
@@ -64,7 +111,7 @@ int main(int argc, char** argv) {
 
   auto [m, i] = parser.perfectLinksConfig();
 
-  output.open(parser.outputPath());
+  logger.open(parser.outputPath());
 
   // create link and bind
   PerfectLink link{parser.id()};
@@ -78,19 +125,14 @@ int main(int argc, char** argv) {
   if (parser.id() == i) {
     // we are the receiver process
     // preallocate about 16MiB for delivery logs
-    delivered.reserve(16 * (1 << 20) / sizeof(Delivered));
+    logger.reserve_delivered_memory(16 * (1 << 20));
     auto listen_handle = link.listen([](auto process_id, auto& data) {
       SendType msg = 0;
       for (size_t i = 0; i < sizeof(SendType); i++) {
         msg |= static_cast<SendType>(data[i]) << (i * 8);
       }
 
-      std::lock_guard<std::mutex> guard(delivered_mutex);
-      delivered.emplace_back(process_id, msg);
-      if (delivered.capacity() == delivered.size()) {
-        // we are at full capacity, flush the buffer to the file
-        write_delivered();
-      }
+      logger.deliver(process_id, msg);
     });
     listen_handle.join();
   } else {
@@ -106,7 +148,7 @@ int main(int argc, char** argv) {
     constexpr auto pack = 8;
     std::array<uint8_t, pack * sizeof(SendType)> msg;
     for (SendType n = pack; n <= m; n += 8) {
-      sent_amount = n;
+      logger.set_sent_amount(n);
       for (size_t j = 1; j <= pack; j++) {
         for (size_t i = 0; i < sizeof(SendType); i++) {
           msg[(j - 1) * sizeof(SendType) + i] =
@@ -126,8 +168,8 @@ int main(int argc, char** argv) {
           std::make_tuple(msg.data() + 7 * sizeof(SendType), sizeof(SendType)));
     }
     // send rest individually
-    for (SendType n = sent_amount + 1; n <= m; n++) {
-      sent_amount = n;
+    for (SendType n = logger.sent_amount() + 1; n <= m; n++) {
+      logger.set_sent_amount(n);
       for (size_t i = 0; i < sizeof(SendType); i++) {
         msg[i] = (n >> (i * 8)) & 0xff;
       }
