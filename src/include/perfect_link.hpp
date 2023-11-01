@@ -12,7 +12,6 @@
 #include <limits>
 #include <mutex>
 #include <optional>
-#include <thread>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
@@ -43,10 +42,9 @@ class PerfectLink {
       auto(ProcessIdType process_id, OwnedSlice<std::uint8_t>& data)->void>;
 
   /// @brief Starts listening to incoming messages. Sends ACKs for new messages.
-  /// Receives ACKs and resends messages with missing ACKs.
+  /// Receives ACKs and resends messages with missing ACKs. Thread safe.
   /// @param callback Function that will be called when a message is delivered.
-  /// @return The created thread handle.
-  auto listen(ListenCallback callback) -> std::thread;
+  auto listen(ListenCallback callback) -> void;
 
   /// @brief Sends a message from this link to a chosen host and port. The
   /// data has to be smaller than about 64KiB. Sending is possible only
@@ -70,7 +68,7 @@ class PerfectLink {
   static constexpr std::size_t MAX_MESSAGE_SIZE =
       std::numeric_limits<MessageSizeType>::max();
   static constexpr timeval RESEND_TIMEOUT = {0, 200000};
-  static constexpr std::uint16_t MAX_IN_FLIGHT = 512;
+  static constexpr std::uint16_t MAX_IN_FLIGHT = 64;
 
   /// @brief Data structure to hold temporary data of a message that was sent
   /// but where no ACK for it was yet received.
@@ -106,6 +104,7 @@ class PerfectLink {
   /// @brief A map of messages that have been delivered.
   std::unordered_set<std::tuple<ProcessIdType, MessageIdType>, hash_delivered>
       _delivered = {};
+  std::mutex _delivered_mutex;
   /// @brief Flag indicating whether this link should do no more work.
   std::atomic_bool _done = false;
 

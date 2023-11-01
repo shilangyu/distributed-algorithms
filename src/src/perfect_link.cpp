@@ -73,92 +73,95 @@ inline auto PerfectLink::_decode_message(
   return {is_ack, seq_nr, process_id};
 }
 
-auto PerfectLink::listen(ListenCallback callback) -> std::thread {
+auto PerfectLink::listen(ListenCallback callback) -> void {
   if (!_sock_fd.has_value()) {
     throw std::runtime_error("Cannot listen if not bound");
   }
   auto sock_fd = _sock_fd.value();
 
-  std::thread listener([sock_fd, callback, this]() {
-    std::array<uint8_t, MAX_MESSAGE_SIZE> message;
-    std::vector<Slice<std::uint8_t>> data_buffer;
-    data_buffer.reserve(MAX_MESSAGE_COUNT_IN_PACKET);
+  std::array<uint8_t, MAX_MESSAGE_SIZE> message;
+  std::vector<Slice<std::uint8_t>> data_buffer;
+  data_buffer.reserve(MAX_MESSAGE_COUNT_IN_PACKET);
 
-    sockaddr_in sender_addr;
-    std::memset(&sender_addr, 0, sizeof(sender_addr));
-    socklen_t sender_addr_len = sizeof(sender_addr);
+  sockaddr_in sender_addr;
+  std::memset(&sender_addr, 0, sizeof(sender_addr));
+  socklen_t sender_addr_len = sizeof(sender_addr);
 
-    while (true) {
-      // wait for a message
-      auto message_size =
-          recvfrom(sock_fd, message.data(), message.size(), MSG_WAITALL,
-                   reinterpret_cast<sockaddr*>(&sender_addr), &sender_addr_len);
+  while (true) {
+    // wait for a message
+    auto message_size =
+        recvfrom(sock_fd, message.data(), message.size(), MSG_WAITALL,
+                 reinterpret_cast<sockaddr*>(&sender_addr), &sender_addr_len);
 
-      if (_done) {
-        return;
-      }
-
-      if (message_size < 0 && errno == EINTR) {
-        // got interrupted, try again
-        continue;
-      }
-
-      if (message_size < 0 && errno == EAGAIN) {
-        // timed out, resend messages without ACKs
-        std::lock_guard<std::mutex> guard(_pending_for_ack_mutex);
-        for (auto& [seq_nr, pending] : _pending_for_ack) {
-          perror_check<ssize_t>(
-              [&, &seq_nr = seq_nr, &pending = pending] {
-                return sendto(sock_fd, pending.message.data(),
-                              pending.message_size, 0,
-                              reinterpret_cast<const sockaddr*>(&pending.addr),
-                              sizeof(pending.addr));
-              },
-              [](auto res) { return res < 0; }, "failed to resend message");
-        }
-        continue;
-      }
-
-      if (message_size < 0) {
-        perror("failed to receive message");
-        continue;
-      }
-
-      auto [is_ack, seq_nr, process_id] = _decode_message(
-          message, static_cast<size_t>(message_size), data_buffer);
-
-      if (is_ack) {
-        // mark a sent message as being acknowledged, we will no longer be
-        // sending it
-        {
-          std::lock_guard<std::mutex> guard(_pending_for_ack_mutex);
-          _pending_for_ack.erase(seq_nr);
-        }
-        _pending_for_ack_cv.notify_one();
-      } else {
-        // we received a potentially new message
-        if (_delivered.find({process_id, seq_nr}) == _delivered.end()) {
-          // we have not yet delivered the message, do it now
-          for (auto& data : data_buffer) {
-            OwnedSlice owned = data;
-            callback(process_id, owned);
-          }
-          _delivered.emplace(process_id, seq_nr);
-        }
-
-        // send an ACK
-        auto [ack_message, ack_message_size] = _prepare_message(seq_nr, true);
-        perror_check<ssize_t>(
-            [&, &ack_message = ack_message,
-             &ack_message_size = ack_message_size] {
-              return sendto(sock_fd, ack_message.data(), ack_message_size, 0,
-                            reinterpret_cast<sockaddr*>(&sender_addr),
-                            sender_addr_len);
-            },
-            [](auto res) { return res < 0; }, "failed to send ack");
-      }
+    if (_done) {
+      return;
     }
-  });
 
-  return listener;
+    if (message_size < 0 && errno == EINTR) {
+      // got interrupted, try again
+      continue;
+    }
+
+    if (message_size < 0 && errno == EAGAIN) {
+      // timed out, resend messages without ACKs
+      std::lock_guard<std::mutex> guard(_pending_for_ack_mutex);
+      for (auto& [seq_nr, pending] : _pending_for_ack) {
+        perror_check<ssize_t>(
+            [&, &seq_nr = seq_nr, &pending = pending] {
+              return sendto(sock_fd, pending.message.data(),
+                            pending.message_size, 0,
+                            reinterpret_cast<const sockaddr*>(&pending.addr),
+                            sizeof(pending.addr));
+            },
+            [](auto res) { return res < 0; }, "failed to resend message");
+      }
+      continue;
+    }
+
+    if (message_size < 0) {
+      perror("failed to receive message");
+      continue;
+    }
+
+    auto [is_ack, seq_nr, process_id] = _decode_message(
+        message, static_cast<size_t>(message_size), data_buffer);
+
+    if (is_ack) {
+      // mark a sent message as being acknowledged, we will no longer be
+      // sending it
+      {
+        std::lock_guard<std::mutex> guard(_pending_for_ack_mutex);
+        _pending_for_ack.erase(seq_nr);
+      }
+      _pending_for_ack_cv.notify_one();
+    } else {
+      // we received a potentially new message
+      _delivered_mutex.lock();
+      auto has_not_been_delivered =
+          _delivered.find({process_id, seq_nr}) == _delivered.end();
+      if (has_not_been_delivered) {
+        _delivered.emplace(process_id, seq_nr);
+      }
+      _delivered_mutex.unlock();
+
+      if (has_not_been_delivered) {
+        // we have not yet delivered the message, do it now
+        for (auto& data : data_buffer) {
+          OwnedSlice owned = data;
+          callback(process_id, owned);
+        }
+      }
+
+      // send an ACK
+      auto [ack_message, ack_message_size] = _prepare_message(seq_nr, true);
+      perror_check<ssize_t>(
+          [&, &ack_message = ack_message,
+           &ack_message_size = ack_message_size] {
+            return sendto(sock_fd, ack_message.data(), ack_message_size, 0,
+                          reinterpret_cast<sockaddr*>(&sender_addr),
+                          sender_addr_len);
+          },
+          [](auto res) { return res < 0; }, "failed to send ack");
+    }
+  }
 }

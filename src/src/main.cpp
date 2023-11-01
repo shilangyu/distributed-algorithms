@@ -52,7 +52,10 @@ struct Logger {
     }
   }
 
-  inline auto freeze() -> void { _frozen = {_sent_amount, _delivered_size}; }
+  inline auto freeze() -> void {
+    _frozen = {_sent_amount, _delivered_size};
+    _mutex.lock();
+  }
 
   inline auto set_sent_amount(const SendType sent_amount) -> void {
     _sent_amount = sent_amount;
@@ -126,13 +129,15 @@ int main(int argc, char** argv) {
     // we are the receiver process
     // preallocate about 16MiB for delivery logs
     logger.reserve_delivered_memory(16 * (1 << 20));
-    auto listen_handle = link.listen([](auto process_id, auto& data) {
-      SendType msg = 0;
-      for (size_t i = 0; i < sizeof(SendType); i++) {
-        msg |= static_cast<SendType>(data[i]) << (i * 8);
-      }
+    auto listen_handle = std::thread([&] {
+      link.listen([](auto process_id, auto& data) {
+        SendType msg = 0;
+        for (size_t i = 0; i < sizeof(SendType); i++) {
+          msg |= static_cast<SendType>(data[i]) << (i * 8);
+        }
 
-      logger.deliver(process_id, msg);
+        logger.deliver(process_id, msg);
+      });
     });
     listen_handle.join();
   } else {
@@ -140,8 +145,10 @@ int main(int argc, char** argv) {
     if (!receiverHost.has_value()) {
       throw std::runtime_error("Receiver host not defined in hosts file");
     }
-    auto resend_handle = link.listen(
-        []([[maybe_unused]] auto process_id, [[maybe_unused]] auto& data) {});
+    auto resend_handle = std::thread([&] {
+      link.listen(
+          []([[maybe_unused]] auto process_id, [[maybe_unused]] auto& data) {});
+    });
 
     // we are a sender process
     // pack 8 datas in one message
