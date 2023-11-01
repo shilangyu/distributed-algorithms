@@ -10,6 +10,7 @@ RUN_FOLDER=$(mktemp -d)
 HOSTS_FILE=$RUN_FOLDER/hosts
 OUTPUTS=$RUN_FOLDER/outputs
 CONFIG_FILE=$RUN_FOLDER/perfect-links.config
+SLEEP_TIME_S=3
 
 mkdir $OUTPUTS
 
@@ -37,7 +38,7 @@ done
 
 
 # give processes some time to run
-sleep 3
+sleep $SLEEP_TIME_S
 
 # send SIGTERM to all
 for key in "${!PIDS[@]}"
