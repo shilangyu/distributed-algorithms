@@ -38,14 +38,14 @@ struct Logger {
 
   inline auto write() -> void {
     if (_output.is_open()) {
-      const auto& [sent_amount, delivered_size] =
-          _frozen.value_or(std::make_tuple(
-              _sent_amount, static_cast<std::uint32_t>(_delivered_size)));
+      const auto& [sent_amount, delivered_size] = _frozen.value_or(
+          std::make_tuple(static_cast<std::uint32_t>(_sent_amount),
+                          static_cast<std::uint32_t>(_delivered_size)));
 
-      // TODO: this will print multiple times when flushing delivered buffer
-      for (SendType n = 1; n <= sent_amount; n++) {
+      for (SendType n = _sent_amount_logged + 1; n <= sent_amount; n++) {
         _output << "b " << n << std::endl;
       }
+      _sent_amount_logged = sent_amount;
 
       for (size_t i = 0; i < delivered_size; i++) {
         auto& [process_id, msg] = _delivered_buffer[i];
@@ -75,7 +75,8 @@ struct Logger {
   std::vector<Delivered> _delivered_buffer;
   std::mutex _mutex;
   std::ofstream _output;
-  SendType _sent_amount = 0;
+  std::atomic_uint32_t _sent_amount = 0;
+  std::atomic_uint32_t _sent_amount_logged = 0;
   std::optional<std::tuple<SendType, std::uint32_t>> _frozen = std::nullopt;
 };
 
