@@ -35,7 +35,7 @@ class BestEffortBroadcast {
           are_equal<std::tuple<std::uint8_t*, std::size_t>, Data...>::value>,
       class = std::enable_if_t<(sizeof...(Data) <=
                                 PerfectLink::MAX_MESSAGE_COUNT_IN_PACKET)>>
-  auto send(Data... datas) -> void;
+  auto broadcast(Data... datas) -> void;
 
  private:
   PerfectLink _link;
@@ -43,7 +43,7 @@ class BestEffortBroadcast {
 };
 
 template <typename... Data, class, class>
-auto BestEffortBroadcast::send(Data... datas) -> void {
+auto BestEffortBroadcast::broadcast(Data... datas) -> void {
   for (auto& [host, port] : _processes) {
     _link.send(host, port, datas...);
   }
