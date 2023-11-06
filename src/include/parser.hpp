@@ -57,7 +57,7 @@ class Parser {
 
     unsigned long id;
     in_addr_t ip;
-    unsigned short port;
+    in_port_t port;
 
    private:
     bool isValidIpAddress(const char* ipAddress) {
@@ -195,6 +195,15 @@ class Parser {
     }
 
     return {m, static_cast<decltype(id_)>(i)};
+  }
+
+  auto fifoBroadcastConfig() const -> size_t {
+    std::ifstream infile(configPath());
+
+    size_t m;
+    infile >> m;
+
+    return m;
   }
 
   std::vector<Host> hosts() const {
