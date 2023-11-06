@@ -5,6 +5,7 @@
 #include <mutex>
 #include <thread>
 #include <vector>
+#include "best_effort_broadcast.hpp"
 #include "common.hpp"
 #include "parser.hpp"
 #include "perfect_link.hpp"
