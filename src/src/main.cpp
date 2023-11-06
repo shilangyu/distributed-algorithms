@@ -42,13 +42,14 @@ struct Logger {
           _frozen.value_or(std::make_tuple(
               _sent_amount, static_cast<std::uint32_t>(_delivered_size)));
 
+      // TODO: this will print multiple times when flushing delivered buffer
+      for (SendType n = 1; n <= sent_amount; n++) {
+        _output << "b " << n << std::endl;
+      }
+
       for (size_t i = 0; i < delivered_size; i++) {
         auto& [process_id, msg] = _delivered_buffer[i];
         _output << "d " << +process_id << " " << msg << std::endl;
-      }
-
-      for (SendType n = 1; n <= sent_amount; n++) {
-        _output << "b " << n << std::endl;
       }
     }
   }
@@ -99,6 +100,18 @@ static void stop(int) {
   exit(0);
 }
 
+auto map_hosts(std::vector<Parser::Host> hosts)
+    -> std::vector<std::tuple<in_addr_t, in_port_t>> {
+  std::vector<std::tuple<in_addr_t, in_port_t>> result;
+  result.reserve(hosts.size());
+
+  for (const auto& host : hosts) {
+    result.emplace_back(host.ip, host.port);
+  }
+
+  return result;
+}
+
 int main(int argc, char** argv) {
   perror_check<sig_t>([] { return std::signal(SIGTERM, stop); },
                       [](auto res) { return res == SIG_ERR; },
@@ -107,87 +120,69 @@ int main(int argc, char** argv) {
                       [](auto res) { return res == SIG_ERR; },
                       "set SIGINT signal handler", true);
 
-  // `true` means that a config file is required.
-  // Call with `false` if no config file is necessary.
-  bool requireConfig = true;
-  Parser parser(argc, argv, requireConfig);
+  Parser parser(argc, argv);
   parser.parse();
 
-  auto [m, i] = parser.perfectLinksConfig();
+  auto m = parser.fifoBroadcastConfig();
 
   logger.open(parser.outputPath());
 
-  // create link and bind
-  PerfectLink link{parser.id()};
-  auto myHost = parser.hostById(parser.id());
-  if (myHost.has_value()) {
+  // create broadcast link and bind
+  BestEffortBroadcast link{parser.id(), map_hosts(parser.hosts())};
+  if (auto myHost = parser.hostById(parser.id()); myHost.has_value()) {
     link.bind(myHost.value().ip, myHost.value().port);
   } else {
     throw std::runtime_error("Host not defined in the hosts file");
   }
 
-  if (parser.id() == i) {
-    // we are the receiver process
-    // preallocate about 16MiB for delivery logs
-    logger.reserve_delivered_memory(16 * (1 << 20));
-    auto listen_handle = std::thread([&] {
-      link.listen([](auto process_id, auto& data) {
-        SendType msg = 0;
-        for (size_t i = 0; i < sizeof(SendType); i++) {
-          msg |= static_cast<SendType>(data[i]) << (i * 8);
-        }
+  // preallocate about 16MiB for delivery logs
+  logger.reserve_delivered_memory(16 * (1 << 20));
 
-        logger.deliver(process_id, msg);
-      });
-    });
-    listen_handle.join();
-  } else {
-    auto receiverHost = parser.hostById(i);
-    if (!receiverHost.has_value()) {
-      throw std::runtime_error("Receiver host not defined in hosts file");
-    }
-    auto resend_handle = std::thread([&] {
-      link.listen(
-          []([[maybe_unused]] auto process_id, [[maybe_unused]] auto& data) {});
-    });
-
-    // we are a sender process
-    // pack 8 datas in one message
-    constexpr auto pack = 8;
-    std::array<uint8_t, pack * sizeof(SendType)> msg;
-    for (SendType n = pack; n <= m; n += 8) {
-      logger.set_sent_amount(n);
-      for (size_t j = 1; j <= pack; j++) {
-        for (size_t i = 0; i < sizeof(SendType); i++) {
-          msg[(j - 1) * sizeof(SendType) + i] =
-              ((n - pack + j) >> (i * 8)) & 0xff;
-        }
-      }
-
-      link.send(
-          receiverHost.value().ip, receiverHost.value().port,
-          std::make_tuple(msg.data() + 0 * sizeof(SendType), sizeof(SendType)),
-          std::make_tuple(msg.data() + 1 * sizeof(SendType), sizeof(SendType)),
-          std::make_tuple(msg.data() + 2 * sizeof(SendType), sizeof(SendType)),
-          std::make_tuple(msg.data() + 3 * sizeof(SendType), sizeof(SendType)),
-          std::make_tuple(msg.data() + 4 * sizeof(SendType), sizeof(SendType)),
-          std::make_tuple(msg.data() + 5 * sizeof(SendType), sizeof(SendType)),
-          std::make_tuple(msg.data() + 6 * sizeof(SendType), sizeof(SendType)),
-          std::make_tuple(msg.data() + 7 * sizeof(SendType), sizeof(SendType)));
-    }
-    // send rest individually
-    for (SendType n = logger.sent_amount() + 1; n <= m; n++) {
-      logger.set_sent_amount(n);
+  // listen for deliveries
+  auto listen_handle = std::thread([&] {
+    link.listen([](auto process_id, auto& data) {
+      SendType msg = 0;
       for (size_t i = 0; i < sizeof(SendType); i++) {
-        msg[i] = (n >> (i * 8)) & 0xff;
+        msg |= static_cast<SendType>(data[i]) << (i * 8);
       }
 
-      link.send(receiverHost.value().ip, receiverHost.value().port,
-                std::make_tuple(msg.data(), sizeof(SendType)));
+      logger.deliver(process_id, msg);
+    });
+  });
+
+  // pack 8 datas in one message
+  constexpr auto pack = 8;
+  std::array<uint8_t, pack * sizeof(SendType)> msg;
+  for (SendType n = pack; n <= m; n += 8) {
+    logger.set_sent_amount(n);
+    for (size_t j = 1; j <= pack; j++) {
+      for (size_t i = 0; i < sizeof(SendType); i++) {
+        msg[(j - 1) * sizeof(SendType) + i] =
+            ((n - pack + j) >> (i * 8)) & 0xff;
+      }
     }
 
-    resend_handle.join();
+    link.broadcast(
+        std::make_tuple(msg.data() + 0 * sizeof(SendType), sizeof(SendType)),
+        std::make_tuple(msg.data() + 1 * sizeof(SendType), sizeof(SendType)),
+        std::make_tuple(msg.data() + 2 * sizeof(SendType), sizeof(SendType)),
+        std::make_tuple(msg.data() + 3 * sizeof(SendType), sizeof(SendType)),
+        std::make_tuple(msg.data() + 4 * sizeof(SendType), sizeof(SendType)),
+        std::make_tuple(msg.data() + 5 * sizeof(SendType), sizeof(SendType)),
+        std::make_tuple(msg.data() + 6 * sizeof(SendType), sizeof(SendType)),
+        std::make_tuple(msg.data() + 7 * sizeof(SendType), sizeof(SendType)));
   }
+  // send rest individually
+  for (SendType n = logger.sent_amount() + 1; n <= m; n++) {
+    logger.set_sent_amount(n);
+    for (size_t i = 0; i < sizeof(SendType); i++) {
+      msg[i] = (n >> (i * 8)) & 0xff;
+    }
+
+    link.broadcast(std::make_tuple(msg.data(), sizeof(SendType)));
+  }
+
+  listen_handle.join();
 
   // after a process finishes broadcasting,
   // it waits forever for the delivery of messages

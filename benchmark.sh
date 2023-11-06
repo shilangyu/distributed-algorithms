@@ -4,12 +4,12 @@ set -e
 
 ./build.sh &> /dev/null
 
-MESSAGES=10000
+MESSAGES=100
 PROCESSES=100
 RUN_FOLDER=$(mktemp -d)
 HOSTS_FILE=$RUN_FOLDER/hosts
 OUTPUTS=$RUN_FOLDER/outputs
-CONFIG_FILE=$RUN_FOLDER/perfect-links.config
+CONFIG_FILE=$RUN_FOLDER/fifo-broadcast.config
 SLEEP_TIME_S=3
 
 mkdir $OUTPUTS
@@ -25,7 +25,7 @@ do
 done
 
 # create config file
-echo $MESSAGES" 1" > $CONFIG_FILE
+echo $MESSAGES > $CONFIG_FILE
 
 
 # start all processes
@@ -48,8 +48,8 @@ do
 	wait $pid || echo "Process "$(($key + 1))" exited with "$?
 done
 
-delivered=$(cat $OUTPUTS/1.out | wc -l | xargs)
-total=$((($PROCESSES - 1) * $MESSAGES))
+delivered=$(cat $OUTPUTS/*.out | grep '^d' | wc -l | xargs)
+total=$(($PROCESSES * $PROCESSES * $MESSAGES))
 frac=$(echo "$delivered/$total * 100" | bc -l)
 
 echo "Delivered "$frac"%"
