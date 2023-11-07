@@ -37,6 +37,10 @@ class BestEffortBroadcast {
                                 PerfectLink::MAX_MESSAGE_COUNT_IN_PACKET)>>
   auto broadcast(Data... datas) -> void;
 
+  /// @brief A list of processes this broadcast link knowns.
+  auto processes() const
+      -> const std::vector<std::tuple<in_addr_t, in_port_t>>&;
+
  private:
   PerfectLink _link;
   const std::vector<std::tuple<in_addr_t, in_port_t>> _processes;

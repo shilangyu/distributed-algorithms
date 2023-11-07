@@ -14,3 +14,8 @@ auto BestEffortBroadcast::bind(const in_addr_t host, const in_port_t port)
 auto BestEffortBroadcast::listen(PerfectLink::ListenCallback callback) -> void {
   _link.listen(callback);
 }
+
+auto BestEffortBroadcast::processes() const
+    -> const std::vector<std::tuple<in_addr_t, in_port_t>>& {
+  return _processes;
+}
