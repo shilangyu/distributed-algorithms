@@ -12,9 +12,16 @@
 /// 3. No creation - no message is delivered unless it was broadcast
 class BestEffortBroadcast {
  public:
-  BestEffortBroadcast(
-      const PerfectLink::ProcessIdType id,
-      const std::vector<std::tuple<in_addr_t, in_port_t>> processes);
+  struct ProcessAddress {
+    in_addr_t host;
+    in_port_t port;
+  };
+
+  using AvailableProcesses =
+      std::unordered_map<PerfectLink::ProcessIdType, ProcessAddress>;
+
+  BestEffortBroadcast(const PerfectLink::ProcessIdType id,
+                      const AvailableProcesses processes);
 
   /// @brief Binds this broadcast link to a host and port. Once done cannot be
   /// done again.
@@ -38,17 +45,16 @@ class BestEffortBroadcast {
   auto broadcast(Data... datas) -> void;
 
   /// @brief A list of processes this broadcast link knowns.
-  auto processes() const
-      -> const std::vector<std::tuple<in_addr_t, in_port_t>>&;
+  auto processes() const -> const AvailableProcesses&;
 
  private:
   PerfectLink _link;
-  const std::vector<std::tuple<in_addr_t, in_port_t>> _processes;
+  const AvailableProcesses _processes;
 };
 
 template <typename... Data, class, class>
 auto BestEffortBroadcast::broadcast(Data... datas) -> void {
-  for (auto& [host, port] : _processes) {
-    _link.send(host, port, datas...);
+  for (const auto& [_, address] : _processes) {
+    _link.send(address.host, address.port, datas...);
   }
 }

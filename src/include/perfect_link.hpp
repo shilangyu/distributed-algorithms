@@ -27,7 +27,11 @@ class PerfectLink {
   /// @brief The type used to store ID of a process.
   using ProcessIdType = std::uint8_t;
 
+  /// @brief The type used to store ID of a message.
+  using MessageIdType = std::uint32_t;
+
   static constexpr std::uint8_t MAX_MESSAGE_COUNT_IN_PACKET = 8;
+  static constexpr ProcessIdType MAX_PROCESSES = 128;
 
   PerfectLink(const ProcessIdType id);
 
@@ -59,9 +63,6 @@ class PerfectLink {
   auto send(const in_addr_t host, const in_port_t port, Data... datas) -> void;
 
  private:
-  /// @brief The type used to store ID of a message.
-  using MessageIdType = std::uint32_t;
-
   /// @brief The type used to store the size of data.
   using MessageSizeType = std::uint16_t;
 
@@ -85,20 +86,22 @@ class PerfectLink {
   /// @brief Id of this process.
   const ProcessIdType _id;
 
+  // TODO: std::tuple<ProcessIdType, MessageIdType> fits in a single uint64.
+  //       Could be compressed to avoid hashing.
   /// @brief Hash function for `_delivered`.
   struct hash_delivered {
-    size_t operator()(
+    inline size_t operator()(
         const std::tuple<ProcessIdType, MessageIdType>& arg) const noexcept {
       return std::get<0>(arg) ^ std::get<1>(arg);
     }
   };
 
   /// @brief Bound socket file descriptor. None if no bind was performed.
-  std::optional<int> _sock_fd = std::nullopt;
+  std::optional<int> _sock_fd;
   /// @brief Current sequence number of messages.
   MessageIdType _seq_nr = 1;
   /// @brief Map of sent messages that have not yet sent back an ACK.
-  std::unordered_map<MessageIdType, PendingMessage> _pending_for_ack = {};
+  std::unordered_map<MessageIdType, PendingMessage> _pending_for_ack;
   std::mutex _pending_for_ack_mutex;
   std::condition_variable _pending_for_ack_cv;
   /// @brief A map of messages that have been delivered.

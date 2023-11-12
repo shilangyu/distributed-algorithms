@@ -103,6 +103,7 @@ auto PerfectLink::listen(ListenCallback callback) -> void {
     }
 
     if (message_size < 0 && errno == EAGAIN) {
+      // TODO: consider scoping resends to a single process
       // timed out, resend messages without ACKs
       std::lock_guard<std::mutex> guard(_pending_for_ack_mutex);
       for (auto& [seq_nr, pending] : _pending_for_ack) {

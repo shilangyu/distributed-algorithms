@@ -17,7 +17,7 @@ class UniformReliableBroadcast {
  public:
   UniformReliableBroadcast(
       const PerfectLink::ProcessIdType id,
-      const std::vector<std::tuple<in_addr_t, in_port_t>> processes);
+      const BestEffortBroadcast::AvailableProcesses processes);
 
   /// @brief Binds this broadcast link to a host and port. Once done cannot be
   /// done again.

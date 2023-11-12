@@ -5,10 +5,10 @@
 #include <mutex>
 #include <thread>
 #include <vector>
-#include "best_effort_broadcast.hpp"
 #include "common.hpp"
 #include "parser.hpp"
 #include "perfect_link.hpp"
+#include "uniform_reliable_broadcast.hpp"
 
 using SendType = std::uint32_t;
 using Delivered = std::tuple<PerfectLink::ProcessIdType, SendType>;
@@ -102,12 +102,12 @@ static void stop(int) {
 }
 
 auto map_hosts(std::vector<Parser::Host> hosts)
-    -> std::vector<std::tuple<in_addr_t, in_port_t>> {
-  std::vector<std::tuple<in_addr_t, in_port_t>> result;
+    -> BestEffortBroadcast::AvailableProcesses {
+  BestEffortBroadcast::AvailableProcesses result;
   result.reserve(hosts.size());
 
   for (const auto& host : hosts) {
-    result.emplace_back(host.ip, host.port);
+    result[host.id] = {host.ip, host.port};
   }
 
   return result;

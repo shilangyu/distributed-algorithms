@@ -38,7 +38,7 @@ class Parser {
 
  public:
   struct Host {
-    Host(size_t id, std::string& ip_or_hostname, unsigned short port)
+    Host(uint8_t id, std::string& ip_or_hostname, unsigned short port)
         : id{id}, port{htons(port)} {
       if (isValidIpAddress(ip_or_hostname.c_str())) {
         ip = inet_addr(ip_or_hostname.c_str());
@@ -55,7 +55,7 @@ class Parser {
 
     unsigned short portReadable() const { return ntohs(port); }
 
-    unsigned long id;
+    uint8_t id;
     in_addr_t ip;
     in_port_t port;
 
@@ -122,7 +122,7 @@ class Parser {
     std::cout << "List of resolved hosts is:\n";
     std::cout << "==========================\n";
     for (auto& host : hosts()) {
-      std::cout << host.id << "\n";
+      std::cout << +host.id << "\n";
       std::cout << "Human-readable IP: " << host.ipReadable() << "\n";
       std::cout << "Machine-readable IP: " << host.ip << "\n";
       std::cout << "Human-readable Port: " << host.portReadable() << "\n";
@@ -228,7 +228,7 @@ class Parser {
         continue;
       }
 
-      unsigned long id;
+      int id;
       std::string ip;
       unsigned short port;
 
@@ -238,7 +238,7 @@ class Parser {
         throw std::invalid_argument(os.str());
       }
 
-      hosts.push_back(Host(id, ip, port));
+      hosts.push_back(Host(static_cast<uint8_t>(id), ip, port));
     }
 
     if (hosts.size() < 2UL) {
