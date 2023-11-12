@@ -51,16 +51,23 @@ inline auto PerfectLink::_decode_message(
     const std::array<uint8_t, MAX_MESSAGE_SIZE>& message,
     const size_t message_size,
     std::vector<Slice<uint8_t>>& data_buffer)
-    -> std::tuple<bool, MessageIdType, ProcessIdType> {
+    -> std::tuple<bool, MessageIdType, ProcessIdType, Slice<std::uint8_t>> {
   bool is_ack = static_cast<bool>(message[0]);
   MessageIdType seq_nr = 0;
   for (size_t i = 0; i < sizeof(MessageIdType); i++) {
     seq_nr |= static_cast<MessageIdType>(message[i + 1]) << (8 * i);
   }
   ProcessIdType process_id = message[1 + sizeof(MessageIdType)];
+  auto offset = 1 + sizeof(MessageIdType) + sizeof(ProcessIdType);
+
+  size_t metadata_length = 0;
+  for (size_t i = 0; i < sizeof(MessageSizeType); i++) {
+    metadata_length |= static_cast<size_t>(message[offset++]) << (8 * i);
+  }
+  Slice<uint8_t> metadata(message.data() + offset, metadata_length);
+  offset += metadata_length;
 
   data_buffer.clear();
-  auto offset = 1 + sizeof(MessageIdType) + sizeof(ProcessIdType);
   while (offset < message_size) {
     size_t length = 0;
     for (size_t i = 0; i < sizeof(MessageSizeType); i++) {
@@ -70,10 +77,20 @@ inline auto PerfectLink::_decode_message(
     offset += length;
   }
 
-  return {is_ack, seq_nr, process_id};
+  return {is_ack, seq_nr, process_id, metadata};
 }
 
 auto PerfectLink::listen(ListenCallback callback) -> void {
+  listen_batch(
+      [&](auto process_id, [[maybe_unused]] auto& metadata, auto& datas) {
+        for (auto& data : datas) {
+          OwnedSlice owned = data;
+          callback(process_id, owned);
+        }
+      });
+}
+
+auto PerfectLink::listen_batch(ListenBatchCallback callback) -> void {
   if (!_sock_fd.has_value()) {
     throw std::runtime_error("Cannot listen if not bound");
   }
@@ -124,7 +141,7 @@ auto PerfectLink::listen(ListenCallback callback) -> void {
       continue;
     }
 
-    auto [is_ack, seq_nr, process_id] = _decode_message(
+    auto [is_ack, seq_nr, process_id, metadata] = _decode_message(
         message, static_cast<size_t>(message_size), data_buffer);
 
     if (is_ack) {
@@ -147,14 +164,13 @@ auto PerfectLink::listen(ListenCallback callback) -> void {
 
       if (has_not_been_delivered) {
         // we have not yet delivered the message, do it now
-        for (auto& data : data_buffer) {
-          OwnedSlice owned = data;
-          callback(process_id, owned);
-        }
+        OwnedSlice m = metadata;
+        callback(process_id, m, data_buffer);
       }
 
       // send an ACK
-      auto [ack_message, ack_message_size] = _prepare_message(seq_nr, true);
+      auto [ack_message, ack_message_size] =
+          _prepare_message(seq_nr, true, std::nullopt);
       perror_check<ssize_t>(
           [&, &ack_message = ack_message,
            &ack_message_size = ack_message_size] {

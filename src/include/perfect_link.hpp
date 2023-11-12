@@ -30,6 +30,8 @@ class PerfectLink {
   /// @brief The type used to store ID of a message.
   using MessageIdType = std::uint32_t;
 
+  using MessageData = std::tuple<std::uint8_t*, std::size_t>;
+
   static constexpr std::uint8_t MAX_MESSAGE_COUNT_IN_PACKET = 8;
   static constexpr ProcessIdType MAX_PROCESSES = 128;
 
@@ -44,23 +46,33 @@ class PerfectLink {
 
   using ListenCallback = std::function<
       auto(ProcessIdType process_id, OwnedSlice<std::uint8_t>& data)->void>;
+  using ListenBatchCallback =
+      std::function<auto(ProcessIdType process_id,
+                         OwnedSlice<std::uint8_t>& metadata,
+                         std::vector<Slice<std::uint8_t>>& datas)
+                        ->void>;
 
   /// @brief Starts listening to incoming messages. Sends ACKs for new messages.
   /// Receives ACKs and resends messages with missing ACKs. Thread safe.
   /// @param callback Function that will be called when a message is delivered.
   auto listen(ListenCallback callback) -> void;
 
+  /// @brief Same as `listen` but receives many messages at once if the send was
+  /// batched. This will also recover metadata.
+  auto listen_batch(ListenBatchCallback callback) -> void;
+
   /// @brief Sends a message from this link to a chosen host and port. The
   /// data has to be smaller than about 64KiB. Sending is possible only
   /// after performing a bind. At most 8 messages can be packed in
   /// a single packet.
-  template <
-      typename... Data,
-      class = std::enable_if_t<
-          are_equal<std::tuple<std::uint8_t*, std::size_t>, Data...>::value>,
-      class =
-          std::enable_if_t<(sizeof...(Data) <= MAX_MESSAGE_COUNT_IN_PACKET)>>
-  auto send(const in_addr_t host, const in_port_t port, Data... datas) -> void;
+  template <typename... Data,
+            class = std::enable_if_t<are_equal<MessageData, Data...>::value>,
+            class = std::enable_if_t<(sizeof...(Data) <=
+                                      MAX_MESSAGE_COUNT_IN_PACKET)>>
+  auto send(const in_addr_t host,
+            const in_port_t port,
+            const std::optional<MessageData> metadata,
+            Data... datas) -> void;
 
   /// @brief Id of this process.
   inline auto id() const -> ProcessIdType { return _id; }
@@ -116,38 +128,43 @@ class PerfectLink {
 
   /// @brief Prepares a message to be sent.
   /// @return Encoded message with its real length.
-  template <
-      typename... Data,
-      class = std::enable_if_t<
-          are_equal<std::tuple<std::uint8_t*, std::size_t>, Data...>::value>>
+  template <typename... Data,
+            class = std::enable_if_t<are_equal<MessageData, Data...>::value>>
   inline auto _prepare_message(const MessageIdType seq_nr,
                                const bool is_ack,
+                               const std::optional<MessageData> metadata,
                                Data... datas) const
       -> std::tuple<std::array<uint8_t, MAX_MESSAGE_SIZE>, std::size_t>;
 
   /// @brief Given a message from network decodes it to data. `data_buffer` will
   /// contain pointers into `message`.
-  /// @return is_ack, seq_nr, process_id, filled data_buffer
+  /// @return is_ack, seq_nr, process_id, metadata
   static inline auto _decode_message(
       const std::array<uint8_t, MAX_MESSAGE_SIZE>& message,
       const size_t message_size,
       std::vector<Slice<uint8_t>>& data_buffer)
-      -> std::tuple<bool, MessageIdType, ProcessIdType>;
+      -> std::tuple<bool, MessageIdType, ProcessIdType, Slice<std::uint8_t>>;
 };
 
 template <typename... Data, class>
-inline auto PerfectLink::_prepare_message(const MessageIdType seq_nr,
-                                          const bool is_ack,
-                                          Data... datas) const
+inline auto PerfectLink::_prepare_message(
+    const MessageIdType seq_nr,
+    const bool is_ack,
+    const std::optional<MessageData> metadata,
+    Data... datas) const
     -> std::tuple<std::array<uint8_t, MAX_MESSAGE_SIZE>, std::size_t> {
-  const auto message_size = 1 + sizeof(MessageIdType) + sizeof(ProcessIdType) +
-                            (std::get<1>(datas) + ... + 0) +
-                            (sizeof...(Data) * sizeof(MessageSizeType));
+  const auto message_size =
+      1 + sizeof(MessageIdType) + sizeof(ProcessIdType) +
+      std::get<1>(metadata.value_or(std::make_tuple(nullptr, 0))) +
+      (std::get<1>(datas) + ... + 0) +
+      (sizeof...(Data) * sizeof(MessageSizeType));
   if (message_size > MAX_MESSAGE_SIZE) {
     throw std::runtime_error("Message is too large");
   }
 
-  // message = [is_ack, ...seq_nr, ...process_id, ...[data_length, ...data]]
+  // message = [is_ack, ...seq_nr, ...process_id,
+  //            ...metadata_length, ...metadata,
+  //            ...[data_length, ...data]]
   std::array<uint8_t, MAX_MESSAGE_SIZE> message;
   message[0] = static_cast<uint8_t>(is_ack);
   for (size_t i = 0; i < sizeof(MessageIdType); i++) {
@@ -155,6 +172,19 @@ inline auto PerfectLink::_prepare_message(const MessageIdType seq_nr,
   }
   message[1 + sizeof(MessageIdType)] = _id;
   auto offset = 1 + sizeof(MessageIdType) + sizeof(ProcessIdType);
+
+  if (metadata) {
+    auto& [data, length] = metadata.value();
+    for (size_t i = 0; i < sizeof(MessageSizeType); i++) {
+      message[offset++] = (length >> (8 * i)) & 0xff;
+    }
+    std::memcpy(message.data() + offset, data, length);
+    offset += length;
+  } else {
+    for (size_t i = 0; i < sizeof(MessageSizeType); i++) {
+      message[offset++] = 0;
+    }
+  }
 
   if constexpr (sizeof...(Data) > 0) {
     for (const auto& [data, length] : {datas...}) {
@@ -172,13 +202,15 @@ inline auto PerfectLink::_prepare_message(const MessageIdType seq_nr,
 template <typename... Data, class, class>
 auto PerfectLink::send(const in_addr_t host,
                        const in_port_t port,
+                       const std::optional<MessageData> metadata,
                        Data... datas) -> void {
   if (!_sock_fd.has_value()) {
     throw std::runtime_error("Cannot send if not bound");
   }
   auto sock_fd = _sock_fd.value();
 
-  auto [message, message_size] = _prepare_message(_seq_nr, false, datas...);
+  auto [message, message_size] =
+      _prepare_message(_seq_nr, false, metadata, datas...);
 
   sockaddr_in addr;
   std::memset(&addr, 0, sizeof(addr));

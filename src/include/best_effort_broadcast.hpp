@@ -1,6 +1,7 @@
 #pragma once
 
 #include <netinet/in.h>
+#include <optional>
 #include <tuple>
 #include <vector>
 #include "perfect_link.hpp"
@@ -33,16 +34,20 @@ class BestEffortBroadcast {
   /// @param callback Function that will be called when a message is delivered.
   auto listen(PerfectLink::ListenCallback callback) -> void;
 
+  /// @brief Same as `listen` but receives many messages at once if the send was
+  /// batched. This will also recover metadata.
+  auto listen_batch(PerfectLink::ListenBatchCallback callback) -> void;
+
   /// @brief Broadcasts a message to all processes. The data has to be smaller
   /// than about 64KiB. Sending is possible only after performing a bind. At
   /// most 8 messages can be packed in a single packet.
-  template <
-      typename... Data,
-      class = std::enable_if_t<
-          are_equal<std::tuple<std::uint8_t*, std::size_t>, Data...>::value>,
-      class = std::enable_if_t<(sizeof...(Data) <=
-                                PerfectLink::MAX_MESSAGE_COUNT_IN_PACKET)>>
-  auto broadcast(Data... datas) -> void;
+  template <typename... Data,
+            class = std::enable_if_t<
+                are_equal<PerfectLink::MessageData, Data...>::value>,
+            class = std::enable_if_t<
+                (sizeof...(Data) <= PerfectLink::MAX_MESSAGE_COUNT_IN_PACKET)>>
+  auto broadcast(const std::optional<PerfectLink::MessageData> metadata,
+                 Data... datas) -> void;
 
   /// @brief A list of processes this broadcast link knowns.
   auto processes() const -> const AvailableProcesses&;
@@ -56,8 +61,10 @@ class BestEffortBroadcast {
 };
 
 template <typename... Data, class, class>
-auto BestEffortBroadcast::broadcast(Data... datas) -> void {
+auto BestEffortBroadcast::broadcast(
+    const std::optional<PerfectLink::MessageData> metadata,
+    Data... datas) -> void {
   for (const auto& [_, address] : _processes) {
-    _link.send(address.host, address.port, datas...);
+    _link.send(address.host, address.port, metadata, datas...);
   }
 }
