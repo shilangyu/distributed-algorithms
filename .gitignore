@@ -8,6 +8,7 @@ __pycache__/
 
 bin/da_proc
 target/
+.vscode
 
 ### C ###
 # Prerequisites

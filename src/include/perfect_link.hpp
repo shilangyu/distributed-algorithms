@@ -181,6 +181,8 @@ auto PerfectLink::send(const in_addr_t host,
   addr.sin_port = port;
 
   {
+    // TODO: if all messages inflight were sent to a process that crashed, this
+    // will lock forever
     std::unique_lock lock(_pending_for_ack_mutex);
     _pending_for_ack_cv.wait(
         lock, [this] { return _pending_for_ack.size() < MAX_IN_FLIGHT; });
