@@ -47,6 +47,9 @@ class BestEffortBroadcast {
   /// @brief A list of processes this broadcast link knowns.
   auto processes() const -> const AvailableProcesses&;
 
+  /// @brief Id of this process.
+  inline auto id() const -> PerfectLink::ProcessIdType { return _link.id(); }
+
  private:
   PerfectLink _link;
   const AvailableProcesses _processes;

@@ -62,6 +62,9 @@ class PerfectLink {
           std::enable_if_t<(sizeof...(Data) <= MAX_MESSAGE_COUNT_IN_PACKET)>>
   auto send(const in_addr_t host, const in_port_t port, Data... datas) -> void;
 
+  /// @brief Id of this process.
+  inline auto id() const -> ProcessIdType { return _id; }
+
  private:
   /// @brief The type used to store the size of data.
   using MessageSizeType = std::uint16_t;

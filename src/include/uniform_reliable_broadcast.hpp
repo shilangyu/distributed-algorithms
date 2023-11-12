@@ -40,6 +40,9 @@ class UniformReliableBroadcast {
                                 PerfectLink::MAX_MESSAGE_COUNT_IN_PACKET)>>
   auto broadcast(Data... datas) -> void;
 
+  /// @brief Id of this process.
+  inline auto id() const -> PerfectLink::ProcessIdType;
+
  private:
   BestEffortBroadcast _link;
 };
