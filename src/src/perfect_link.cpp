@@ -156,10 +156,7 @@ auto PerfectLink::listen_batch(ListenBatchCallback callback) -> void {
       // we received a potentially new message
       _delivered_mutex.lock();
       auto has_not_been_delivered =
-          _delivered.find({process_id, seq_nr}) == _delivered.end();
-      if (has_not_been_delivered) {
-        _delivered.emplace(process_id, seq_nr);
-      }
+          _delivered.emplace(process_id, seq_nr).second;
       _delivered_mutex.unlock();
 
       if (has_not_been_delivered) {

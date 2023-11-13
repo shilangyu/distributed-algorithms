@@ -20,16 +20,17 @@ auto UniformReliableBroadcast::listen(PerfectLink::ListenCallback callback)
       message_id |= static_cast<MessageIdType>(metadata[i]) << (8 * i);
     }
 
-    // TODO: protect with mutex
     // mark that process_id has received this message
-    auto acks = _acknowledged.try_emplace(message_id).first->second;
-    assert(!acks[process_id] && "Aready acked");
+    _acknowledged_mutex.lock();
+    auto& acks = _acknowledged.try_emplace(message_id).first->second;
+    assert(!acks[process_id] && "Already acked");
     acks[process_id] = true;
 
     // check if majority has acked, if so, we can deliver. We don't need to keep
     // track of a delivered structure: the moment where we reach majority will
     // happen only once due to the no duplication property.
     auto should_deliver = acks.count() == (_link.processes().size() / 2 + 1);
+    _acknowledged_mutex.unlock();
 
     if (should_deliver) {
       PerfectLink::ProcessIdType author_id =
@@ -42,8 +43,14 @@ auto UniformReliableBroadcast::listen(PerfectLink::ListenCallback callback)
 
     // if we have not yet received this message from that process, note and
     // broadcast
-    if (_pending.find(message_id) == _pending.end()) {
-      _pending.insert(message_id);
+    _pending_mutex.lock();
+    auto should_broadcast = _pending.insert(message_id).second;
+    _pending_mutex.unlock();
+
+    assert(("should not need to broadcast when delivering",
+            !should_deliver or !should_broadcast));
+
+    if (should_broadcast) {
       // paying for the stupid decision of compile-time known datas amount...
       switch (datas.size()) {
         case 0:

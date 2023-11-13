@@ -64,7 +64,7 @@ class PerfectLink {
   /// @brief Sends a message from this link to a chosen host and port. The
   /// data has to be smaller than about 64KiB. Sending is possible only
   /// after performing a bind. At most 8 messages can be packed in
-  /// a single packet.
+  /// a single packet. Thread safe.
   template <typename... Data,
             class = std::enable_if_t<are_equal<MessageData, Data...>::value>,
             class = std::enable_if_t<(sizeof...(Data) <=
@@ -219,6 +219,8 @@ auto PerfectLink::send(const in_addr_t host,
     std::unique_lock lock(_pending_for_ack_mutex);
     _pending_for_ack_cv.wait(
         lock, [this] { return _pending_for_ack.size() < MAX_IN_FLIGHT; });
+    _pending_for_ack.try_emplace(_seq_nr, addr, message, message_size);
+    _seq_nr += 1;
   }
 
   perror_check<ssize_t>(
@@ -227,8 +229,4 @@ auto PerfectLink::send(const in_addr_t host,
                       reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
       },
       [](auto res) { return res < 0; }, "failed to send message", true);
-
-  std::lock_guard lock(_pending_for_ack_mutex);
-  _pending_for_ack.try_emplace(_seq_nr, addr, message, message_size);
-  _seq_nr += 1;
 }

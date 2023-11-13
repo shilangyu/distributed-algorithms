@@ -40,7 +40,7 @@ class BestEffortBroadcast {
 
   /// @brief Broadcasts a message to all processes. The data has to be smaller
   /// than about 64KiB. Sending is possible only after performing a bind. At
-  /// most 8 messages can be packed in a single packet.
+  /// most 8 messages can be packed in a single packet. Thread safe.
   template <typename... Data,
             class = std::enable_if_t<
                 are_equal<PerfectLink::MessageData, Data...>::value>,

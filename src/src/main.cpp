@@ -129,7 +129,7 @@ int main(int argc, char** argv) {
   logger.open(parser.outputPath());
 
   // create broadcast link and bind
-  BestEffortBroadcast link{parser.id(), map_hosts(parser.hosts())};
+  UniformReliableBroadcast link{parser.id(), map_hosts(parser.hosts())};
   if (auto myHost = parser.hostById(parser.id()); myHost.has_value()) {
     link.bind(myHost.value().ip, myHost.value().port);
   } else {
