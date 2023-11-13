@@ -153,11 +153,12 @@ inline auto PerfectLink::_prepare_message(
     const std::optional<MessageData> metadata,
     Data... datas) const
     -> std::tuple<std::array<uint8_t, MAX_MESSAGE_SIZE>, std::size_t> {
-  const auto message_size =
-      1 + sizeof(MessageIdType) + sizeof(ProcessIdType) +
-      std::get<1>(metadata.value_or(std::make_tuple(nullptr, 0))) +
-      (std::get<1>(datas) + ... + 0) +
-      (sizeof...(Data) * sizeof(MessageSizeType));
+  auto metadata_value = metadata.value_or(std::make_tuple(nullptr, 0));
+
+  const auto message_size = 1 + sizeof(MessageIdType) + sizeof(ProcessIdType) +
+                            std::get<1>(metadata_value) +
+                            (std::get<1>(datas) + ... + 0) +
+                            (sizeof...(Data) * sizeof(MessageSizeType));
   if (message_size > MAX_MESSAGE_SIZE) {
     throw std::runtime_error("Message is too large");
   }
@@ -173,18 +174,12 @@ inline auto PerfectLink::_prepare_message(
   message[1 + sizeof(MessageIdType)] = _id;
   auto offset = 1 + sizeof(MessageIdType) + sizeof(ProcessIdType);
 
-  if (metadata) {
-    auto& [data, length] = metadata.value();
-    for (size_t i = 0; i < sizeof(MessageSizeType); i++) {
-      message[offset++] = (length >> (8 * i)) & 0xff;
-    }
-    std::memcpy(message.data() + offset, data, length);
-    offset += length;
-  } else {
-    for (size_t i = 0; i < sizeof(MessageSizeType); i++) {
-      message[offset++] = 0;
-    }
+  auto& [data, length] = metadata_value;
+  for (size_t i = 0; i < sizeof(MessageSizeType); i++) {
+    message[offset++] = (length >> (8 * i)) & 0xff;
   }
+  std::memcpy(message.data() + offset, data, length);
+  offset += length;
 
   if constexpr (sizeof...(Data) > 0) {
     for (const auto& [data, length] : {datas...}) {

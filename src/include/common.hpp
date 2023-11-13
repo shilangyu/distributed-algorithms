@@ -97,6 +97,10 @@ struct Slice {
 
   inline auto size() const -> std::size_t { return _size; }
 
+  inline auto unsafe_raw() const -> std::tuple<T*, std::size_t> {
+    return std::make_tuple(const_cast<T*>(_data), _size);
+  }
+
  private:
   const T* _data;
   const std::size_t _size;
