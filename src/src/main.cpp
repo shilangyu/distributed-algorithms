@@ -101,7 +101,7 @@ static void stop(int) {
   exit(0);
 }
 
-auto map_hosts(std::vector<Parser::Host> hosts)
+static auto map_hosts(std::vector<Parser::Host> hosts)
     -> BestEffortBroadcast::AvailableProcesses {
   BestEffortBroadcast::AvailableProcesses result;
   result.reserve(hosts.size());

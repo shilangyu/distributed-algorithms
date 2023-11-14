@@ -34,7 +34,10 @@ auto UniformReliableBroadcast::listen(PerfectLink::ListenCallback callback)
 
     if (should_deliver) {
       PerfectLink::ProcessIdType author_id =
-          message_id & std::numeric_limits<PerfectLink::ProcessIdType>::max();
+          static_cast<PerfectLink::ProcessIdType>(
+              message_id &
+              static_cast<MessageIdType>(
+                  std::numeric_limits<PerfectLink::ProcessIdType>::max()));
       for (auto& data : datas) {
         OwnedSlice owned = data;
         callback(author_id, owned);
@@ -53,6 +56,7 @@ auto UniformReliableBroadcast::listen(PerfectLink::ListenCallback callback)
     if (should_broadcast) {
       // paying for the stupid decision of compile-time known datas amount...
       switch (datas.size()) {
+        static_assert(PerfectLink::MAX_MESSAGE_COUNT_IN_PACKET == 8);
         case 0:
           _link.broadcast(metadata.unsafe_raw());
           break;
@@ -96,7 +100,8 @@ auto UniformReliableBroadcast::listen(PerfectLink::ListenCallback callback)
                           datas[5].unsafe_raw(), datas[6].unsafe_raw(),
                           datas[7].unsafe_raw());
           break;
-          static_assert(PerfectLink::MAX_MESSAGE_COUNT_IN_PACKET == 8);
+        default:
+          assert(false);
       }
     }
   });

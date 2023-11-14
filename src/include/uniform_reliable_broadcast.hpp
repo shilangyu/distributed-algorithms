@@ -79,7 +79,7 @@ auto UniformReliableBroadcast::broadcast(Data... datas) -> void {
 
   for (size_t i = 0; i < sizeof(PerfectLink::ProcessIdType); i++) {
     message_id |= static_cast<MessageIdType>(id() & (0xff << (8 * i)));
-    message_id_data[i] = (id() >> (i * 8)) & 0xff;
+    message_id_data[i] = static_cast<std::uint8_t>((id() >> (i * 8)) & 0xff);
   }
   for (size_t i = 0; i < sizeof(PerfectLink::MessageIdType); i++) {
     message_id |= (_seq_nr & static_cast<MessageIdType>(0xff << (8 * i)))
