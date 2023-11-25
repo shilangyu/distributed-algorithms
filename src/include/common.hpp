@@ -29,7 +29,6 @@ inline auto perror_check(const std::function<auto()->T> syscall,
 #else
                              true
 #endif
-
                          ) -> T {
   T res;
   do {

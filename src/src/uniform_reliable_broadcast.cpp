@@ -23,13 +23,14 @@ auto UniformReliableBroadcast::listen(PerfectLink::ListenCallback callback)
     // mark that process_id has received this message
     _acknowledged_mutex.lock();
     auto& acks = _acknowledged.try_emplace(message_id).first->second;
-    assert(!acks[process_id] && "Already acked");
+    auto had_acked = acks[process_id];
     acks[process_id] = true;
 
     // check if majority has acked, if so, we can deliver. We don't need to keep
     // track of a delivered structure: the moment where we reach majority will
     // happen only once due to the no duplication property.
-    auto should_deliver = acks.count() == (_link.processes().size() / 2 + 1);
+    auto should_deliver =
+        !had_acked && acks.count() == (_link.processes().size() / 2 + 1);
     _acknowledged_mutex.unlock();
 
     if (should_deliver) {
