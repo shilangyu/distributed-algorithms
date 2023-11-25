@@ -171,11 +171,12 @@ auto PerfectLink::listen_batch(ListenBatchCallback callback) -> void {
       perror_check<ssize_t>(
           [&, &ack_message = ack_message,
            &ack_message_size = ack_message_size] {
-            return sendto(sock_fd, ack_message.data(), ack_message_size, 0,
-                          reinterpret_cast<sockaddr*>(&sender_addr),
-                          sender_addr_len);
+            return sendto(
+                sock_fd, ack_message.data(), ack_message_size, MSG_NOSIGNAL,
+                reinterpret_cast<sockaddr*>(&sender_addr), sender_addr_len);
           },
-          [](auto res) { return res < 0; }, "failed to send ack");
+          [](auto res) { return res < 0 && errno != EPIPE; },
+          "failed to send ack");
     }
   }
 }

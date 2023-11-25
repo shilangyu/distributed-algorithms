@@ -225,8 +225,9 @@ auto PerfectLink::send(const in_addr_t host,
 
   perror_check<ssize_t>(
       [&, &message = message, &message_size = message_size] {
-        return sendto(sock_fd, message.data(), message_size, 0,
+        return sendto(sock_fd, message.data(), message_size, MSG_NOSIGNAL,
                       reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
       },
-      [](auto res) { return res < 0; }, "failed to send message", true);
+      [](auto res) { return res < 0 && errno != EPIPE; },
+      "failed to send message");
 }
