@@ -23,7 +23,7 @@ auto UniformReliableBroadcast::listen(PerfectLink::ListenCallback callback)
     // mark that process_id has received this message
     _acknowledged_mutex.lock();
     auto& acks = _acknowledged.try_emplace(message_id).first->second;
-    auto had_acked = acks[process_id];
+    bool had_acked = acks[process_id];
     acks[process_id] = true;
 
     // check if majority has acked, if so, we can deliver. We don't need to keep
