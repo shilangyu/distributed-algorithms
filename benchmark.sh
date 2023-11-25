@@ -2,7 +2,7 @@
 
 set -e
 
-./build.sh &> /dev/null
+BUILD_TYPE=Release ./build.sh &> /dev/null
 
 MESSAGES=100
 PROCESSES=100

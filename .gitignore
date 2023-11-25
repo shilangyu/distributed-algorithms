@@ -9,6 +9,7 @@ __pycache__/
 bin/da_proc
 target/
 .vscode
+shared/
 
 ### C ###
 # Prerequisites
