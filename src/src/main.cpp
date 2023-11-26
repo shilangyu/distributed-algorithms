@@ -24,7 +24,7 @@ struct Logger {
     // UB: we might be interrupted during a write. Then, we are in a very bad
     // state. In practice, we were promised that logs won't be larger than
     // 16MiB, so this write should never happen. Additionally getting
-    // interrupted during a write is highly unlikely, as a write happend about
+    // interrupted during a write is highly unlikely, as a write happens about
     // once every 2 million deliveries.
     if (_delivered_buffer.capacity() == _delivered_buffer.size()) {
       // we are at full capacity, flush the buffer to the file

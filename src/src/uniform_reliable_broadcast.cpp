@@ -44,6 +44,10 @@ auto UniformReliableBroadcast::listen(PerfectLink::ListenCallback callback)
               message_id &
               static_cast<MessageIdType>(
                   std::numeric_limits<PerfectLink::ProcessIdType>::max()));
+      // if we are delivering our own broadcast, inform semaphore
+      if (author_id == id()) {
+        _send_semaphore.release();
+      }
       for (auto& data : datas) {
         OwnedSlice owned = data;
         callback(author_id, owned);

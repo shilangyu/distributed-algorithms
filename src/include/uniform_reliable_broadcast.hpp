@@ -9,6 +9,7 @@
 #include <vector>
 #include "best_effort_broadcast.hpp"
 #include "perfect_link.hpp"
+#include "semaphore.hpp"
 
 /// Enforces 4 properties for broadcast communication:
 /// 1. Validity - if pi and pj are correct, then every message broadcast by pi
@@ -47,6 +48,9 @@ class UniformReliableBroadcast {
   inline auto id() const -> PerfectLink::ProcessIdType { return _link.id(); }
 
  private:
+  /// @brief Amount of in-flight broadcast messages of this process.
+  static constexpr std::size_t MAX_IN_FLIGHT = 1;
+
   /// @brief A broadcasted message is identified by its source process and a
   /// message ID for that process. Together they fit in a 64bit integer.
   using MessageIdType = std::uint64_t;
@@ -67,6 +71,8 @@ class UniformReliableBroadcast {
 
   /// @brief Current sequence number of messages.
   PerfectLink::MessageIdType _seq_nr = 1;
+
+  Semaphore _send_semaphore{MAX_IN_FLIGHT};
 };
 
 template <typename... Data, class, class>
@@ -84,6 +90,8 @@ auto UniformReliableBroadcast::broadcast(Data... datas) -> void {
     message_id_data[i + sizeof(PerfectLink::ProcessIdType)] =
         (_seq_nr >> (i * 8)) & 0xff;
   }
+
+  _send_semaphore.acquire();
 
   {
     std::lock_guard lock(_acknowledged_mutex);
