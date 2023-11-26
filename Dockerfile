@@ -17,6 +17,5 @@ RUN apt-get -y install file unzip zip xz-utils git \
 
 COPY . /root/
 
-RUN /root/build.sh && /root/cleanup.sh
-
 WORKDIR /root
+RUN ./build.sh && ./cleanup.sh
