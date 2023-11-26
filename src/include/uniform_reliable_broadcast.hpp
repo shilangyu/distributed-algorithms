@@ -57,16 +57,13 @@ class UniformReliableBroadcast {
   BestEffortBroadcast _link;
   // TODO: find a way to garbage collect
   /// @brief Messages that have been acknowledges. Acknowledgement is indicated
-  /// by a set bit in the bitset.
+  /// by a set bit in the bitset. If a map entry exists, then this message is
+  /// pending for delivery. Once enough acks are collected the message is
+  /// delivered. The actual message is not stored here. Together with an ack we
+  /// will receive the message, we can use that to deliver.
   std::unordered_map<MessageIdType, std::bitset<PerfectLink::MAX_PROCESSES>>
       _acknowledged;
   std::mutex _acknowledged_mutex;
-  // TODO: find a way to garbage collect
-  /// @brief Messages pending for delivery. Cannot be yet delivered because of
-  /// missing acknowledgements. The actual message is not stored here. Together
-  /// with an ack we will receive the message, we can use that to deliver.
-  std::unordered_set<MessageIdType> _pending;
-  std::mutex _pending_mutex;
 
   /// @brief Current sequence number of messages.
   PerfectLink::MessageIdType _seq_nr = 1;
@@ -89,8 +86,9 @@ auto UniformReliableBroadcast::broadcast(Data... datas) -> void {
   }
 
   {
-    std::lock_guard lock(_pending_mutex);
-    _pending.insert(message_id);
+    std::lock_guard lock(_acknowledged_mutex);
+    // add map entry to indicate this message is pending
+    _acknowledged.try_emplace(message_id);
     _seq_nr += 1;
   }
 

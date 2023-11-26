@@ -81,8 +81,7 @@ class PerfectLink {
   /// @brief The type used to store the size of data.
   using MessageSizeType = std::uint16_t;
 
-  static constexpr std::size_t MAX_MESSAGE_SIZE =
-      std::numeric_limits<MessageSizeType>::max();
+  static constexpr std::size_t MAX_MESSAGE_SIZE = 64;
   static constexpr timeval RESEND_TIMEOUT = {0, 200000};
   static constexpr std::uint16_t MAX_IN_FLIGHT = 64;
 
@@ -118,7 +117,6 @@ class PerfectLink {
   /// @brief Map of sent messages that have not yet sent back an ACK.
   std::unordered_map<MessageIdType, PendingMessage> _pending_for_ack;
   std::mutex _pending_for_ack_mutex;
-  std::condition_variable _pending_for_ack_cv;
   /// @brief A map of messages that have been delivered.
   std::unordered_set<std::tuple<ProcessIdType, MessageIdType>, hash_delivered>
       _delivered = {};
@@ -214,11 +212,7 @@ auto PerfectLink::send(const in_addr_t host,
   addr.sin_port = port;
 
   {
-    // TODO: if all messages inflight were sent to a process that crashed, this
-    // will lock forever
     std::unique_lock lock(_pending_for_ack_mutex);
-    _pending_for_ack_cv.wait(
-        lock, [this] { return _pending_for_ack.size() < MAX_IN_FLIGHT; });
     _pending_for_ack.try_emplace(_seq_nr, addr, message, message_size);
     _seq_nr += 1;
   }

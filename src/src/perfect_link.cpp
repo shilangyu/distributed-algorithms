@@ -151,7 +151,6 @@ auto PerfectLink::listen_batch(ListenBatchCallback callback) -> void {
         std::lock_guard<std::mutex> guard(_pending_for_ack_mutex);
         _pending_for_ack.erase(seq_nr);
       }
-      _pending_for_ack_cv.notify_one();
     } else {
       // we received a potentially new message
       _delivered_mutex.lock();

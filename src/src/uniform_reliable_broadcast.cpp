@@ -22,9 +22,13 @@ auto UniformReliableBroadcast::listen(PerfectLink::ListenCallback callback)
 
     // mark that process_id has received this message
     _acknowledged_mutex.lock();
-    auto& acks = _acknowledged.try_emplace(message_id).first->second;
-    bool had_acked = acks[process_id];
-    acks[process_id] = true;
+    // iter is pointer into the entry, should_broadcast indicates whether the
+    // map entry did not exist before (in which case we should broadcast)
+    const auto& [iter, should_broadcast] =
+        _acknowledged.try_emplace(message_id);
+    auto& acks = iter->second;
+    bool had_acked = acks[process_id - 1];
+    acks[process_id - 1] = true;
 
     // check if majority has acked, if so, we can deliver. We don't need to keep
     // track of a delivered structure: the moment where we reach majority will
@@ -34,6 +38,7 @@ auto UniformReliableBroadcast::listen(PerfectLink::ListenCallback callback)
     _acknowledged_mutex.unlock();
 
     if (should_deliver) {
+      // extract original process author id and deliver the batch
       PerfectLink::ProcessIdType author_id =
           static_cast<PerfectLink::ProcessIdType>(
               message_id &
@@ -44,12 +49,6 @@ auto UniformReliableBroadcast::listen(PerfectLink::ListenCallback callback)
         callback(author_id, owned);
       }
     }
-
-    // if we have not yet received this message from that process, note and
-    // broadcast
-    _pending_mutex.lock();
-    auto should_broadcast = _pending.insert(message_id).second;
-    _pending_mutex.unlock();
 
     assert(("should not need to broadcast when delivering",
             !should_deliver or !should_broadcast));
@@ -102,6 +101,7 @@ auto UniformReliableBroadcast::listen(PerfectLink::ListenCallback callback)
                           datas[7].unsafe_raw());
           break;
         default:
+          // poor man's std::unreachable();
           assert(false);
       }
     }
