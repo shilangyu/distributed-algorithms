@@ -12,8 +12,7 @@ auto UniformReliableBroadcast::bind(const in_addr_t host, const in_port_t port)
   _link.bind(host, port);
 }
 
-auto UniformReliableBroadcast::listen(PerfectLink::ListenCallback callback)
-    -> void {
+auto UniformReliableBroadcast::listen(ListenCallback callback) -> void {
   _link.listen_batch([&](auto process_id, auto& metadata, auto& datas) {
     MessageIdType message_id = 0;
     for (size_t i = 0; i < sizeof(MessageIdType); i++) {
@@ -38,19 +37,23 @@ auto UniformReliableBroadcast::listen(PerfectLink::ListenCallback callback)
     _acknowledged_mutex.unlock();
 
     if (should_deliver) {
-      // extract original process author id and deliver the batch
+      // extract original process author id and seq_nr
       PerfectLink::ProcessIdType author_id =
           static_cast<PerfectLink::ProcessIdType>(
               message_id &
               static_cast<MessageIdType>(
                   std::numeric_limits<PerfectLink::ProcessIdType>::max()));
+      PerfectLink::MessageIdType seq_nr =
+          static_cast<PerfectLink::MessageIdType>(
+              (message_id >> (8 * sizeof(PerfectLink::ProcessIdType))));
       // if we are delivering our own broadcast, inform semaphore
       if (author_id == id()) {
         _send_semaphore.release();
       }
       for (auto& data : datas) {
         OwnedSlice owned = data;
-        callback(author_id, owned);
+        callback(author_id, seq_nr, owned);
+        seq_nr += 1;
       }
     }
 

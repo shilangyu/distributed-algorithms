@@ -24,6 +24,12 @@ class UniformReliableBroadcast {
       const PerfectLink::ProcessIdType id,
       const BestEffortBroadcast::AvailableProcesses processes);
 
+  using ListenCallback =
+      std::function<auto(PerfectLink::ProcessIdType process_id,
+                         PerfectLink::MessageIdType seq_nr,
+                         OwnedSlice<std::uint8_t>& data)
+                        ->void>;
+
   /// @brief Binds this broadcast link to a host and port. Once done cannot be
   /// done again.
   auto bind(const in_addr_t host, const in_port_t port) -> void;
@@ -32,7 +38,7 @@ class UniformReliableBroadcast {
   /// messages. Receives ACKs and resends messages with missing ACKs. Thread
   /// safe.
   /// @param callback Function that will be called when a message is delivered.
-  auto listen(PerfectLink::ListenCallback callback) -> void;
+  auto listen(ListenCallback callback) -> void;
 
   /// @brief Broadcasts a message to all processes. The data has to be smaller
   /// than about 64KiB. Sending is possible only after performing a bind. At
@@ -46,6 +52,8 @@ class UniformReliableBroadcast {
 
   /// @brief Id of this process.
   inline auto id() const -> PerfectLink::ProcessIdType { return _link.id(); }
+
+  static constexpr PerfectLink::MessageIdType INITIAL_SEQ_NR = 1;
 
  private:
   /// @brief Amount of in-flight broadcast messages of this process.
@@ -70,7 +78,7 @@ class UniformReliableBroadcast {
   std::mutex _acknowledged_mutex;
 
   /// @brief Current sequence number of messages.
-  PerfectLink::MessageIdType _seq_nr = 1;
+  PerfectLink::MessageIdType _seq_nr = INITIAL_SEQ_NR;
 
   Semaphore _send_semaphore{MAX_IN_FLIGHT};
 };
@@ -97,7 +105,7 @@ auto UniformReliableBroadcast::broadcast(Data... datas) -> void {
     std::lock_guard lock(_acknowledged_mutex);
     // add map entry to indicate this message is pending
     _acknowledged.try_emplace(message_id);
-    _seq_nr += 1;
+    _seq_nr += static_cast<PerfectLink::MessageIdType>(sizeof...(Data));
   }
 
   _link.broadcast(
