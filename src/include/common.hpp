@@ -52,7 +52,13 @@ class Perf {
  public:
   Perf() {}
 
-  template <class result_t = std::chrono::nanoseconds,
+  template <class clock_t = std::chrono::steady_clock,
+            class duration_t = std::chrono::nanoseconds>
+  inline auto mark() -> std::chrono::time_point<clock_t, duration_t> {
+    return clock_t::now();
+  }
+
+  template <class result_t = std::chrono::milliseconds,
             class clock_t = std::chrono::steady_clock,
             class duration_t = std::chrono::nanoseconds>
   inline auto since(std::string name,

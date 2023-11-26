@@ -4,13 +4,13 @@ set -e
 
 BUILD_TYPE=Release ./build.sh &> /dev/null
 
-MESSAGES=100
-PROCESSES=100
+MESSAGES=20
+PROCESSES=128
 RUN_FOLDER=$(mktemp -d)
 HOSTS_FILE=$RUN_FOLDER/hosts
 OUTPUTS=$RUN_FOLDER/outputs
 CONFIG_FILE=$RUN_FOLDER/fifo-broadcast.config
-SLEEP_TIME_S=3
+SLEEP_TIME_S=10
 
 mkdir $OUTPUTS
 

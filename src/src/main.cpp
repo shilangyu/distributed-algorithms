@@ -3,6 +3,7 @@
 #include <csignal>
 #include <iostream>
 #include <mutex>
+#include <sstream>
 #include <thread>
 #include <vector>
 #include "common.hpp"
@@ -38,19 +39,21 @@ struct Logger {
 
   inline auto write() -> void {
     if (_output.is_open()) {
+      std::stringstream ss;
       const auto& [sent_amount, delivered_size] = _frozen.value_or(
           std::make_tuple(static_cast<std::uint32_t>(_sent_amount),
                           static_cast<std::uint32_t>(_delivered_size)));
 
       for (SendType n = _sent_amount_logged + 1; n <= sent_amount; n++) {
-        _output << "b " << n << std::endl;
+        ss << "b " << n << std::endl;
       }
       _sent_amount_logged = sent_amount;
 
       for (size_t i = 0; i < delivered_size; i++) {
         auto& [process_id, msg] = _delivered_buffer[i];
-        _output << "d " << +process_id << " " << msg << std::endl;
+        ss << "d " << +process_id << " " << msg << std::endl;
       }
+      _output << ss.str();
     }
   }
 
