@@ -227,12 +227,13 @@ int main(int argc, char** argv) {
   // pack 8 datas in one message
   constexpr auto pack = 8;
   std::array<uint8_t, pack * sizeof(SendType)> msg;
-  for (SendType n = pack; n <= m; n += 8) {
+  for (SendType n = pack; n <= m; n += pack) {
     logger.set_sent_amount(n);
-    for (size_t j = 1; j <= pack; j++) {
-      for (size_t i = 0; i < sizeof(SendType); i++) {
-        msg[(j - 1) * sizeof(SendType) + i] =
-            ((n - pack + j) >> (i * 8)) & 0xff;
+    for (SendType j = 1; j <= pack; j++) {
+      const SendType num = (n - pack + j);
+      for (SendType i = 0; i < sizeof(SendType); i++) {
+        std::size_t index = (j - 1) * sizeof(SendType) + i;
+        msg[index] = (num >> (i * 8)) & 0xff;
       }
     }
 

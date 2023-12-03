@@ -155,6 +155,7 @@ inline auto PerfectLink::_prepare_message(
 
   const auto message_size = 1 + sizeof(MessageIdType) + sizeof(ProcessIdType) +
                             std::get<1>(metadata_value) +
+                            sizeof(MessageSizeType) +
                             (std::get<1>(datas) + ... + 0) +
                             (sizeof...(Data) * sizeof(MessageSizeType));
   if (message_size > MAX_MESSAGE_SIZE) {
