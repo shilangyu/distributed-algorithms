@@ -206,6 +206,38 @@ class Parser {
     return m;
   }
 
+  struct LatticeAgreementConfig {
+    std::size_t max_proposed;
+    std::size_t unique_proposals;
+    std::vector<std::vector<std::uint64_t>> proposals;
+  };
+
+  auto latticeAgreementConfig() const -> LatticeAgreementConfig {
+    std::ifstream infile(configPath());
+    infile.unsetf(std::ios_base::skipws);
+
+    size_t p = 0;
+    size_t vs = 0;
+    size_t ds = 0;
+    char ws;
+
+    infile >> p >> ws >> vs >> ws >> ds >> ws;
+    std::vector<std::vector<std::uint64_t>> proposals(p);
+
+    for (std::size_t i = 0; i < p; i++) {
+      for (std::size_t j = 0; j < vs; j++) {
+        std::uint64_t val;
+        infile >> val >> ws;
+        proposals[i].push_back(val);
+        if (ws == '\n') {
+          break;
+        }
+      }
+    }
+
+    return LatticeAgreementConfig{vs, ds, proposals};
+  }
+
   std::vector<Host> hosts() const {
     std::ifstream hostsFile(hostsPath());
     std::vector<Host> hosts;
