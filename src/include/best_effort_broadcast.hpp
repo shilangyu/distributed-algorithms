@@ -49,6 +49,17 @@ class BestEffortBroadcast {
   auto broadcast(const std::optional<PerfectLink::MessageData> metadata,
                  Data... datas) -> void;
 
+  /// @brief Sending a message to a single host.
+  template <typename... Data,
+            class = std::enable_if_t<
+                are_equal<PerfectLink::MessageData, Data...>::value>,
+            class = std::enable_if_t<
+                (sizeof...(Data) <= PerfectLink::MAX_MESSAGE_COUNT_IN_PACKET)>>
+  auto send(const in_addr_t host,
+            const in_port_t port,
+            const std::optional<PerfectLink::MessageData> metadata,
+            Data... datas) -> void;
+
   /// @brief A list of processes this broadcast link knowns.
   auto processes() const -> const AvailableProcesses&;
 
@@ -67,4 +78,13 @@ auto BestEffortBroadcast::broadcast(
   for (const auto& [_, address] : _processes) {
     _link.send(address.host, address.port, metadata, datas...);
   }
+}
+
+template <typename... Data, class, class>
+auto BestEffortBroadcast::send(
+    const in_addr_t host,
+    const in_port_t port,
+    const std::optional<PerfectLink::MessageData> metadata,
+    Data... datas) -> void {
+  _link.send(host, port, metadata, datas...);
 }
