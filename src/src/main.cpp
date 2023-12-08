@@ -1,87 +1,81 @@
-#include <array>
-#include <chrono>
 #include <csignal>
 #include <iostream>
 #include <mutex>
-#include <queue>
 #include <sstream>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 #include "common.hpp"
-#include "fifo_broadcast.hpp"
+#include "lattice_agreement.hpp"
 #include "parser.hpp"
 
-using SendType = std::uint32_t;
-
-using Delivered = std::tuple<PerfectLink::ProcessIdType, SendType>;
-
 struct Logger {
-  inline auto reserve_delivered_memory(const std::size_t bytes) -> void {
-    _delivered_buffer.reserve(bytes / sizeof(Delivered));
+  inline auto reserve_decided_memory(const std::size_t bytes) -> void {
+    _decided_buffer.reserve(bytes / sizeof(LatticeAgreement::AgreementType));
   }
 
-  inline auto deliver(PerfectLink::ProcessIdType process_id, SendType msg) {
+  inline auto decide(
+      const std::unordered_set<LatticeAgreement::AgreementType>& set) {
     std::lock_guard<std::mutex> lock(_mutex);
-    _delivered_buffer.emplace_back(process_id, msg);
-    // UB: we might be interrupted during a write. Then, we are in a very bad
-    // state. In practice, we were promised that logs won't be larger than
-    // 16MiB, so this write should never happen. Additionally getting
-    // interrupted during a write is highly unlikely, as a write happens about
-    // once every 2 million deliveries.
-    if (_delivered_buffer.capacity() == _delivered_buffer.size()) {
+    // UB: we might be interrupted during a write. Then, we are in a very
+    // bad state. In practice, we were promised that logs won't be larger
+    // than 16MiB, so this write should never happen. Additionally getting
+    // interrupted during a write is highly unlikely, as a write happens
+    // about once every 2 million deliveries.
+    if (_decided_buffer.capacity() < _decided_buffer.size() + set.size()) {
       // we are at full capacity, flush the buffer to the file
       write();
-      _delivered_buffer.clear();
-      _delivered_size = 0;
-    } else {
-      _delivered_size.fetch_add(1);
+      _decided_buffer.clear();
+      _decided_size = 0;
     }
+
+    _decided_buffer.push_back(
+        static_cast<LatticeAgreement::AgreementType>(set.size()));
+    _decided_buffer.insert(_decided_buffer.end(), set.begin(), set.end());
+    _decided_size.fetch_add(
+        static_cast<LatticeAgreement::AgreementType>(set.size()) + 1);
   }
 
   inline auto write() -> void {
     if (_output.is_open()) {
       std::stringstream ss;
-      const auto& [sent_amount, delivered_size] = _frozen.value_or(
-          std::make_tuple(static_cast<std::uint32_t>(_sent_amount),
-                          static_cast<std::uint32_t>(_delivered_size)));
+      const auto& decided_size =
+          _frozen.value_or(static_cast<std::uint32_t>(_decided_size));
 
-      for (SendType n = _sent_amount_logged + 1; n <= sent_amount; n++) {
-        ss << "b " << n << std::endl;
+      for (size_t i = 0; i < decided_size; i++) {
+        auto len = _decided_buffer[i];
+        for (size_t j = 0; j < len; j++) {
+          i += 1;
+          if (j != 0) {
+            ss << " ";
+          }
+          ss << _decided_buffer[i];
+        }
+        ss << '\n';
       }
-      _sent_amount_logged = sent_amount;
 
-      for (size_t i = 0; i < delivered_size; i++) {
-        auto& [process_id, msg] = _delivered_buffer[i];
-        ss << "d " << +process_id << " " << msg << std::endl;
-      }
       _output << ss.str();
     }
   }
 
   inline auto freeze() -> void {
-    _frozen = {_sent_amount, _delivered_size};
+    _frozen = _decided_size;
     _mutex.lock();
   }
-
-  inline auto set_sent_amount(const SendType sent_amount) -> void {
-    _sent_amount = sent_amount;
-  }
-
-  inline auto sent_amount() const -> SendType { return _sent_amount; }
 
   inline auto open(const std::string path) -> void { _output.open(path); }
 
  private:
   /// @brief The size of buffer won't actually indicate the size. We separately
   /// store an atomic size to update it after a write happened. When an
-  /// interrupt happens we then know how many logs where actually fully written.
-  std::atomic_uint32_t _delivered_size = 0;
-  std::vector<Delivered> _delivered_buffer;
+  /// interrupt happens we then know how many logs were actually fully written.
+  std::atomic_uint32_t _decided_size = 0;
+  /// A linear buffer of many decided sets. A sequence of decided numbers starts
+  /// with an entry describing how many numbers there are.
+  std::vector<LatticeAgreement::AgreementType> _decided_buffer;
   std::mutex _mutex;
   std::ofstream _output;
-  std::atomic_uint32_t _sent_amount = 0;
-  std::atomic_uint32_t _sent_amount_logged = 0;
-  std::optional<std::tuple<SendType, std::uint32_t>> _frozen = std::nullopt;
+  std::optional<std::uint32_t> _frozen = std::nullopt;
 };
 
 Logger logger;
@@ -128,58 +122,27 @@ int main(int argc, char** argv) {
   Parser parser(argc, argv);
   parser.parse();
 
-  auto m = parser.fifoBroadcastConfig();
+  auto config = parser.latticeAgreementConfig();
 
   logger.open(parser.outputPath());
 
-  // create broadcast link and bind
-  FifoBroadcast link{parser.id(), map_hosts(parser.hosts())};
+  // create an agreement link and bind
+  LatticeAgreement agreement{parser.id(), map_hosts(parser.hosts())};
   if (auto myHost = parser.hostById(parser.id()); myHost.has_value()) {
-    link.bind(myHost.value().ip, myHost.value().port);
+    agreement.bind(myHost.value().ip, myHost.value().port);
   } else {
     throw std::runtime_error("Host not defined in the hosts file");
   }
 
-  // preallocate about 16MiB for delivery logs
-  logger.reserve_delivered_memory(16 * (1 << 20));
+  // preallocate about 16MiB for decided logs
+  logger.reserve_decided_memory(16 * (1 << 20));
 
   // listen for deliveries
-  auto listen_handle = std::thread([&] {
-    link.listen(
-        [](auto process_id, auto msg) { logger.deliver(process_id, msg); });
-  });
+  auto listen_handle = std::thread(
+      [&] { agreement.listen([](auto& set) { logger.decide(set); }); });
 
-  // pack 8 datas in one message
-  constexpr auto pack = 8;
-  std::array<uint8_t, pack * sizeof(SendType)> msg;
-  for (SendType n = pack; n <= m; n += pack) {
-    logger.set_sent_amount(n);
-    for (SendType j = 1; j <= pack; j++) {
-      const SendType num = (n - pack + j);
-      for (SendType i = 0; i < sizeof(SendType); i++) {
-        std::size_t index = (j - 1) * sizeof(SendType) + i;
-        msg[index] = (num >> (i * 8)) & 0xff;
-      }
-    }
-
-    link.broadcast(
-        std::make_tuple(msg.data() + 0 * sizeof(SendType), sizeof(SendType)),
-        std::make_tuple(msg.data() + 1 * sizeof(SendType), sizeof(SendType)),
-        std::make_tuple(msg.data() + 2 * sizeof(SendType), sizeof(SendType)),
-        std::make_tuple(msg.data() + 3 * sizeof(SendType), sizeof(SendType)),
-        std::make_tuple(msg.data() + 4 * sizeof(SendType), sizeof(SendType)),
-        std::make_tuple(msg.data() + 5 * sizeof(SendType), sizeof(SendType)),
-        std::make_tuple(msg.data() + 6 * sizeof(SendType), sizeof(SendType)),
-        std::make_tuple(msg.data() + 7 * sizeof(SendType), sizeof(SendType)));
-  }
-  // send rest individually
-  for (SendType n = logger.sent_amount() + 1; n <= m; n++) {
-    logger.set_sent_amount(n);
-    for (size_t i = 0; i < sizeof(SendType); i++) {
-      msg[i] = (n >> (i * 8)) & 0xff;
-    }
-
-    link.broadcast(std::make_tuple(msg.data(), sizeof(SendType)));
+  for (auto& proposal : config.proposals) {
+    agreement.propose(proposal);
   }
 
   listen_handle.join();
@@ -192,3 +155,14 @@ int main(int argc, char** argv) {
 
   return 0;
 }
+
+// TODO: does ds mean unique within a single agreement or all of them?
+// TODO: upon exists event in proposer alg: what if both become true at the same
+// time?
+
+// TODO: when you have the set equal to all unique values, you can decide that
+// immediately without acks
+// TODO: proposer and acceptor proposed_value/accepted_set can be the same
+/*
+
+ */

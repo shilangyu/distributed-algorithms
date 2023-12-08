@@ -209,7 +209,7 @@ class Parser {
   struct LatticeAgreementConfig {
     std::size_t max_proposed;
     std::size_t unique_proposals;
-    std::vector<std::vector<std::uint64_t>> proposals;
+    std::vector<std::vector<std::uint32_t>> proposals;
   };
 
   auto latticeAgreementConfig() const -> LatticeAgreementConfig {
@@ -222,11 +222,11 @@ class Parser {
     char ws;
 
     infile >> p >> ws >> vs >> ws >> ds >> ws;
-    std::vector<std::vector<std::uint64_t>> proposals(p);
+    std::vector<std::vector<std::uint32_t>> proposals(p);
 
     for (std::size_t i = 0; i < p; i++) {
       for (std::size_t j = 0; j < vs; j++) {
-        std::uint64_t val;
+        std::uint32_t val;
         infile >> val >> ws;
         proposals[i].push_back(val);
         if (ws == '\n') {
