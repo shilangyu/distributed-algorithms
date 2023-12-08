@@ -72,6 +72,8 @@ do
 	wait $pid || echo "Process "$(($key + 1))" exited with "$?
 done
 
+./tools/validate_lattice_agreement.py --configs $CONFIG_FILE.* --outputs $OUTPUTS/*.out
+
 delivered=$(cat $OUTPUTS/*.out | wc -l | xargs)
 total=$(($PROCESSES * $AGREEMENT_COUNT))
 frac=$(echo "$delivered/$total * 100" | bc -l)
