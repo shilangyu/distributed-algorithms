@@ -2,7 +2,14 @@
 # You can, however, change the list of files that comprise this variable.
 
 include_directories(include)
-set(SOURCES src/main.cpp src/perfect_link.cpp src/best_effort_broadcast.cpp src/uniform_reliable_broadcast.cpp src/semaphore.cpp)
+set(SOURCES 
+	src/main.cpp
+	src/perfect_link.cpp
+	src/best_effort_broadcast.cpp
+	src/uniform_reliable_broadcast.cpp
+	src/semaphore.cpp
+	src/lattice_agreement.cpp
+)
 
 # DO NOT EDIT THE FOLLOWING LINES
 find_package(Threads)
