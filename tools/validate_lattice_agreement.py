@@ -76,18 +76,24 @@ def check_configs(configs: list[Config]):
 
     (p, vs, ds) = params.pop()
 
-    if not all(p == len(x.proposals) for x in configs):
-        raise SyntaxError(
-            "Config files do not have the amount of proposals equal to `p`"
-        )
+    for config in configs:
+        if len(config.proposals) != p:
+            raise SyntaxError(
+                f"Config file {config.file_name}: the amount of proposals is not equal to `p`"
+            )
 
-    if not all(all(len(p) <= vs for p in x.proposals) for x in configs):
-        raise SyntaxError("Config files have proposals exceeding `vs` amount")
+    for config in configs:
+        for n, proposal in enumerate(config.proposals):
+            if len(proposal) > vs:
+                raise SyntaxError(
+                    f"Config file {config.file_name}, proposal nr {n+1}: the amount of values exceeds `vs`"
+                )
 
-    if not all(len(p) <= ds for p in zip_union(p, [x.proposals for x in configs])):
-        raise SyntaxError(
-            "Config files have proposals with unique values exceeding `ds` amount"
-        )
+    for n, proposal in enumerate(zip_union(p, [x.proposals for x in configs])):
+        if len(proposal) > ds:
+            raise SyntaxError(
+                f"Proposal nr {n+1}: there are over `ds` unique values among all processes"
+            )
 
 
 def check_outputs(configs: list[Config], outputs: list[Output]):
