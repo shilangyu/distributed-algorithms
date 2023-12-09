@@ -27,30 +27,13 @@ do
 	echo $i" localhost "$((11000 + $i)) >> $HOSTS_FILE
 done
 
-# pick random values
-NUMS=()
-for i in $(seq 1 $MAX_UNIQUE_PROPOSED)
-do
-	num=$(shuf -i 1-$MAX_PROPOSED_VALUE -n 1)
-	NUMS+=($num)
-done
-
 # create config files
+CONFIG_FILES=()
 for i in $(seq 1 $PROCESSES)
 do
-	echo $AGREEMENT_COUNT" "$PROPOSE_AMOUNT" "$MAX_UNIQUE_PROPOSED > $CONFIG_FILE.$i
-	
-	for j in $(seq 1 $AGREEMENT_COUNT)
-	do
-		NUM=()
-		for k in $(shuf -i 0-$(($MAX_UNIQUE_PROPOSED-1)) -n $(shuf -i 1-$PROPOSE_AMOUNT -n 1))
-		do
-			NUM+=(${NUMS[$k]})
-		done
-
-		echo ${NUM[@]} >> $CONFIG_FILE.$i
-	done
+	CONFIG_FILES+=("$CONFIG_FILE.$i")
 done
+./tools/generate_lattice_agreement_config.py --p $AGREEMENT_COUNT --vs $PROPOSE_AMOUNT --ds $MAX_UNIQUE_PROPOSED --config-files ${CONFIG_FILES[@]}
 
 # start all processes
 PIDS=()
