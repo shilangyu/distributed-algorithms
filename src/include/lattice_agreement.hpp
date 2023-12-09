@@ -1,6 +1,8 @@
 #pragma once
 
 #include <netinet/in.h>
+#include <mutex>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include "best_effort_broadcast.hpp"
