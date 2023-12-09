@@ -34,6 +34,7 @@ class PerfectLink {
 
   static constexpr std::uint8_t MAX_MESSAGE_COUNT_IN_PACKET = 8;
   static constexpr ProcessIdType MAX_PROCESSES = 128;
+  static constexpr std::size_t MAX_MESSAGE_SIZE = 64;
 
   PerfectLink(const ProcessIdType id);
 
@@ -81,7 +82,6 @@ class PerfectLink {
   /// @brief The type used to store the size of data.
   using MessageSizeType = std::uint16_t;
 
-  static constexpr std::size_t MAX_MESSAGE_SIZE = 64;
   static constexpr timeval RESEND_TIMEOUT = {0, 200000};
   static constexpr std::uint16_t MAX_IN_FLIGHT = 64;
 
