@@ -40,8 +40,60 @@ class LatticeAgreement {
   inline auto id() const -> PerfectLink::ProcessIdType { return _link.id(); }
 
  private:
+  /// @brief Type used to encode individual proposal rounds in a single
+  /// agreement.
+  using ProposalNumberType = std::uint32_t;
+
+  struct Agreement {
+    struct Proposal {
+      PerfectLink::ProcessIdType ack_count = 0;
+      PerfectLink::ProcessIdType nack_count = 0;
+      // TODO: not sure if it needs to be per proposal or not
+      std::unordered_set<AgreementType> proposed_value;
+    };
+
+    // TODO: consider storing it in a dense representation (vector)
+    std::unordered_map<PerfectLink::MessageIdType, Proposal> proposals;
+    ProposalNumberType proposal_nr = 0;
+    bool has_decided = false;
+  };
+
+  /// @brief Handles incoming proposals.
+  auto _handle_proposal(const PerfectLink::ProcessIdType process_id,
+                        const PerfectLink::MessageIdType agreement_nr,
+                        const ProposalNumberType proposal_nr,
+                        const OwnedSlice<std::uint8_t>& data) -> void;
+
+  /// @brief Handles incoming ACKs.
+  auto _handle_ack(const PerfectLink::MessageIdType agreement_nr,
+                   const ProposalNumberType proposal_nr,
+                   ListenCallback callback) -> void;
+
+  /// @brief Handles incoming NACKs.
+  auto _handle_nack(const PerfectLink::MessageIdType agreement_nr,
+                    const ProposalNumberType proposal_nr,
+                    const OwnedSlice<std::uint8_t>& data) -> void;
+
+  /// @brief Check if the accumulated acks/nacks warrant a new proposal.
+  /// @return
+  auto _check_nacks(Agreement& agreement,
+                    const PerfectLink::MessageIdType agreement_nr,
+                    const Agreement::Proposal& proposal) -> void;
+
+  template <class Iter>
+  auto _broadcast_proposal(Agreement& agreement,
+                           PerfectLink::MessageIdType agreement_nr,
+                           Iter begin,
+                           Iter end) -> void;
+
   /// @brief Amount of in-flight agreements of this process.
   static constexpr std::size_t MAX_IN_FLIGHT = 1;
+
+  enum class MessageKind : std::uint8_t {
+    Proposal = 0,
+    Ack = 1,
+    Nack = 2,
+  };
 
   BestEffortBroadcast _link;
 
@@ -49,4 +101,44 @@ class LatticeAgreement {
   PerfectLink::MessageIdType _agreement_nr = 0;
 
   Semaphore _send_semaphore{MAX_IN_FLIGHT};
+
+  // TODO: consider storing it in a dense representation (vector)
+  std::unordered_map<PerfectLink::MessageIdType, Agreement> _agreements;
+  std::mutex _agreements_mutex;
 };
+
+template <class Iter>
+auto LatticeAgreement::_broadcast_proposal(
+    Agreement& agreement,
+    PerfectLink::MessageIdType agreement_nr,
+    Iter begin,
+    Iter end) -> void {
+  auto& proposal =
+      agreement.proposals.try_emplace(agreement.proposal_nr).first->second;
+  proposal.proposed_value.insert(begin, end);
+
+  std::array<std::uint8_t, PerfectLink::MAX_MESSAGE_SIZE> data;
+  std::size_t size = 0;
+
+  data[size++] = static_cast<std::uint8_t>(MessageKind::Proposal);
+
+  for (size_t i = 0; i < sizeof(agreement_nr); i++) {
+    data[size++] = (agreement_nr >> (8 * i)) & 0xff;
+  }
+
+  for (size_t i = 0; i < sizeof(agreement.proposal_nr); i++) {
+    data[size++] = (agreement.proposal_nr >> (8 * i)) & 0xff;
+  }
+
+  // make sure we can fit the message
+  assert(size + proposal.proposed_value.size() * sizeof(AgreementType) <
+         data.size());
+
+  for (auto& value : proposal.proposed_value) {
+    for (size_t i = 0; i < sizeof(value); i++) {
+      data[size++] = (value >> (8 * i)) & 0xff;
+    }
+  }
+
+  _link.broadcast(std::nullopt, std::make_tuple(data.data(), size));
+}
