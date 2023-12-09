@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cerrno>
 #include <chrono>
 #include <functional>
@@ -106,6 +107,11 @@ struct Slice {
     return std::make_tuple(const_cast<T*>(_data), _size);
   }
 
+  inline auto subslice(const std::size_t start) const -> Slice<T> {
+    assert(start < _size);
+    return Slice(_data + start, _size - start);
+  }
+
  private:
   const T* _data;
   const std::size_t _size;
@@ -124,4 +130,8 @@ struct OwnedSlice : public Slice<T> {
   OwnedSlice& operator=(const OwnedSlice&) = delete;
   OwnedSlice(OwnedSlice&&) = delete;
   OwnedSlice& operator=(OwnedSlice&&) = delete;
+
+  inline auto subslice(const std::size_t start) const -> OwnedSlice<T> {
+    return OwnedSlice(Slice<T>::subslice(start));
+  }
 };
