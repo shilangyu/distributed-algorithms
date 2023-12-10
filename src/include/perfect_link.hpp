@@ -34,7 +34,7 @@ class PerfectLink {
 
   static constexpr std::uint8_t MAX_MESSAGE_COUNT_IN_PACKET = 8;
   static constexpr ProcessIdType MAX_PROCESSES = 128;
-  static constexpr std::size_t MAX_MESSAGE_SIZE = 64;
+  static constexpr std::size_t MAX_MESSAGE_SIZE = 6'400;
 
   PerfectLink(const ProcessIdType id);
 
