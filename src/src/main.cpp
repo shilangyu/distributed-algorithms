@@ -156,13 +156,9 @@ int main(int argc, char** argv) {
   return 0;
 }
 
-// TODO: does ds mean unique within a single agreement or all of them?
-// TODO: upon exists event in proposer alg: what if both become true at the same
-// time?
-
 // TODO: when you have the set equal to all unique values, you can decide that
 // immediately without acks
-// TODO: proposer and acceptor proposed_value/accepted_set can be the same
+// TODO: proposer and acceptor proposed_value/accepted_set can be the same?
 /*
 
  */

@@ -67,7 +67,6 @@ class UniformReliableBroadcast {
                     sizeof(PerfectLink::MessageIdType));
 
   BestEffortBroadcast _link;
-  // TODO: find a way to garbage collect
   /// @brief Messages that have been acknowledges. Acknowledgement is indicated
   /// by a set bit in the bitset. If a map entry exists, then this message is
   /// pending for delivery. Once enough acks are collected the message is
