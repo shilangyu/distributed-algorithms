@@ -88,15 +88,13 @@ auto LatticeAgreement::_handle_proposal(
 
   std::lock_guard<std::mutex> lock(_agreements_mutex);
 
-  // might be the first time we see this agreement/proposal
+  // might be the first time we see this agreement
   auto& agreement = _agreements.try_emplace(agreement_nr).first->second;
-  auto& proposal =
-      agreement.proposals.try_emplace(agreement.proposal_nr).first->second;
 
   assert(message.size() / sizeof(AgreementType) * sizeof(AgreementType) ==
          message.size());
   // read proposal values
-  std::unordered_set<AgreementType> difference = proposal.proposed_value;
+  std::unordered_set<AgreementType> difference = agreement.accepted_value;
   std::size_t offset = 0;
   while (offset < message.size()) {
     AgreementType value = 0;
@@ -104,7 +102,7 @@ auto LatticeAgreement::_handle_proposal(
       value |= static_cast<AgreementType>(message[offset++]) << (8 * i);
     }
     difference.erase(value);
-    proposal.proposed_value.insert(value);
+    agreement.accepted_value.insert(value);
   }
 
   // we have values that the proposer does not, switch to sending a nack
@@ -138,28 +136,24 @@ auto LatticeAgreement::_handle_ack(
   assert(agreement_entry != _agreements.end());
   auto& agreement = agreement_entry->second;
 
-  // if has already decided we don't care about the ack
-  if (agreement.has_decided) {
+  // if has already decided or the proposal number does not match then we don't
+  // care about the nack
+  if (agreement.has_decided || agreement.proposal_nr != proposal_nr) {
     return;
   }
 
-  auto proposal_entry = agreement.proposals.find(proposal_nr);
-  // got an ack, so we had to start this proposal already
-  assert(proposal_entry != agreement.proposals.end());
-  auto& proposal = proposal_entry->second;
-
-  proposal.ack_count++;
+  agreement.ack_count++;
 
   // check if we can decide immediately
-  if (2 * static_cast<std::size_t>(proposal.ack_count) >=
+  if (2 * static_cast<std::size_t>(agreement.ack_count) >=
       _link.processes().size()) {
-    callback(proposal.proposed_value);
+    callback(agreement.proposed_value);
     agreement.has_decided = true;
     _send_semaphore.release();
     return;
   }
 
-  _check_nacks(agreement, agreement_nr, proposal);
+  _check_nacks(agreement, agreement_nr);
 }
 
 auto LatticeAgreement::_handle_nack(
@@ -173,15 +167,11 @@ auto LatticeAgreement::_handle_nack(
   assert(agreement_entry != _agreements.end());
   auto& agreement = agreement_entry->second;
 
-  // if has already decided we don't care about the nack
-  if (agreement.has_decided) {
+  // if has already decided or the proposal number does not match then we don't
+  // care about the nack
+  if (agreement.has_decided || agreement.proposal_nr != proposal_nr) {
     return;
   }
-
-  auto proposal_entry = agreement.proposals.find(proposal_nr);
-  // got an nack, so we had to start this proposal already
-  assert(proposal_entry != agreement.proposals.end());
-  auto& proposal = proposal_entry->second;
 
   assert(message.size() / sizeof(AgreementType) * sizeof(AgreementType) ==
          message.size());
@@ -192,25 +182,26 @@ auto LatticeAgreement::_handle_nack(
     for (size_t i = 0; i < sizeof(value); i++) {
       value |= static_cast<AgreementType>(message[offset++]) << (8 * i);
     }
-    proposal.proposed_value.insert(value);
+    agreement.proposed_value.insert(value);
   }
 
-  proposal.nack_count++;
+  agreement.nack_count++;
 
-  _check_nacks(agreement, agreement_nr, proposal);
+  _check_nacks(agreement, agreement_nr);
 }
 
 auto LatticeAgreement::_check_nacks(
     Agreement& agreement,
-    const PerfectLink::MessageIdType agreement_nr,
-    const Agreement::Proposal& proposal) -> void {
-  if (2 * (static_cast<std::size_t>(proposal.ack_count) +
-           static_cast<std::size_t>(proposal.nack_count)) >=
+    const PerfectLink::MessageIdType agreement_nr) -> void {
+  if (2 * (static_cast<std::size_t>(agreement.ack_count) +
+           static_cast<std::size_t>(agreement.nack_count)) >=
       _link.processes().size()) {
     // we have to start a new proposal
     agreement.proposal_nr += 1;
+    agreement.ack_count = 0;
+    agreement.nack_count = 0;
     _broadcast_proposal(agreement, agreement_nr,
-                        proposal.proposed_value.begin(),
-                        proposal.proposed_value.end());
+                        agreement.proposed_value.begin(),
+                        agreement.proposed_value.end());
   }
 }

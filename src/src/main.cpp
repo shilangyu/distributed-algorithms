@@ -158,7 +158,4 @@ int main(int argc, char** argv) {
 
 // TODO: when you have the set equal to all unique values, you can decide that
 // immediately without acks
-// TODO: proposer and acceptor proposed_value/accepted_set can be the same?
-/*
-
- */
+// TODO: stream config file

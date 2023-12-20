@@ -47,15 +47,11 @@ class LatticeAgreement {
   using ProposalNumberType = std::uint32_t;
 
   struct Agreement {
-    struct Proposal {
-      PerfectLink::ProcessIdType ack_count = 0;
-      PerfectLink::ProcessIdType nack_count = 0;
-      // TODO: not sure if it needs to be per proposal or not
-      std::unordered_set<AgreementType> proposed_value;
-    };
+    PerfectLink::ProcessIdType ack_count = 0;
+    PerfectLink::ProcessIdType nack_count = 0;
+    std::unordered_set<AgreementType> proposed_value;
+    std::unordered_set<AgreementType> accepted_value;
 
-    // TODO: consider storing it in a dense representation (vector)
-    std::unordered_map<PerfectLink::MessageIdType, Proposal> proposals;
     ProposalNumberType proposal_nr = 0;
     bool has_decided = false;
   };
@@ -79,8 +75,7 @@ class LatticeAgreement {
   /// @brief Check if the accumulated acks/nacks warrant a new proposal.
   /// @return
   auto _check_nacks(Agreement& agreement,
-                    const PerfectLink::MessageIdType agreement_nr,
-                    const Agreement::Proposal& proposal) -> void;
+                    const PerfectLink::MessageIdType agreement_nr) -> void;
 
   template <class Iter>
   auto _broadcast_proposal(Agreement& agreement,
@@ -115,9 +110,7 @@ auto LatticeAgreement::_broadcast_proposal(
     PerfectLink::MessageIdType agreement_nr,
     Iter begin,
     Iter end) -> void {
-  auto& proposal =
-      agreement.proposals.try_emplace(agreement.proposal_nr).first->second;
-  proposal.proposed_value.insert(begin, end);
+  agreement.proposed_value.insert(begin, end);
 
   std::array<std::uint8_t, PerfectLink::MAX_MESSAGE_SIZE> data;
   std::size_t size = 0;
@@ -133,10 +126,10 @@ auto LatticeAgreement::_broadcast_proposal(
   }
 
   // make sure we can fit the message
-  assert(size + proposal.proposed_value.size() * sizeof(AgreementType) <
+  assert(size + agreement.proposed_value.size() * sizeof(AgreementType) <
          data.size());
 
-  for (auto& value : proposal.proposed_value) {
+  for (auto& value : agreement.proposed_value) {
     for (size_t i = 0; i < sizeof(value); i++) {
       data[size++] = (value >> (8 * i)) & 0xff;
     }
