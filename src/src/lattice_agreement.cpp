@@ -4,8 +4,12 @@
 
 LatticeAgreement::LatticeAgreement(
     const PerfectLink::ProcessIdType id,
-    const BestEffortBroadcast::AvailableProcesses processes)
-    : _link(id, processes) {}
+    const BestEffortBroadcast::AvailableProcesses processes,
+    const std::size_t max_unique_values,
+    ListenCallback callback)
+    : _max_unique_values(max_unique_values),
+      _link(id, processes),
+      _callback(callback) {}
 
 auto LatticeAgreement::bind(const in_addr_t host, const in_port_t port)
     -> void {
@@ -22,11 +26,18 @@ auto LatticeAgreement::propose(const std::vector<AgreementType>& values)
 
   auto& agreement = _agreements.try_emplace(_agreement_nr).first->second;
   agreement.proposed_value.insert(values.begin(), values.end());
-  _broadcast_proposal(agreement, _agreement_nr);
+
+  // we have the full set, no need to propose
+  if (agreement.proposed_value.size() == _max_unique_values) {
+    _decide(agreement);
+  } else {
+    _broadcast_proposal(agreement, _agreement_nr);
+  }
+
   _agreement_nr += 1;
 }
 
-auto LatticeAgreement::listen(ListenCallback callback) -> void {
+auto LatticeAgreement::listen() -> void {
   // TODO: check if templating the lambda helps performance
   _link.listen([&](auto process_id, auto& data) {
     std::size_t offset = 0;
@@ -50,7 +61,7 @@ auto LatticeAgreement::listen(ListenCallback callback) -> void {
                          data.subslice(offset));
         break;
       case MessageKind::Ack:
-        _handle_ack(agreement_nr, proposal_nr, callback);
+        _handle_ack(agreement_nr, proposal_nr);
         break;
       case MessageKind::Nack:
         _handle_nack(agreement_nr, proposal_nr, data.subslice(offset));
@@ -128,8 +139,7 @@ auto LatticeAgreement::_handle_proposal(
 
 auto LatticeAgreement::_handle_ack(
     const PerfectLink::MessageIdType agreement_nr,
-    const ProposalNumberType proposal_nr,
-    ListenCallback callback) -> void {
+    const ProposalNumberType proposal_nr) -> void {
   std::lock_guard<std::mutex> lock(_agreements_mutex);
 
   auto agreement_entry = _agreements.find(agreement_nr);
@@ -148,9 +158,7 @@ auto LatticeAgreement::_handle_ack(
   // check if we can decide immediately
   if (2 * static_cast<std::size_t>(agreement.ack_count) >=
       _link.processes().size()) {
-    callback(agreement.proposed_value);
-    agreement.has_decided = true;
-    _send_semaphore.release();
+    _decide(agreement);
     return;
   }
 
@@ -188,7 +196,12 @@ auto LatticeAgreement::_handle_nack(
 
   agreement.nack_count++;
 
-  _check_nacks(agreement, agreement_nr);
+  // we have the full set, no need to check nacks
+  if (agreement.proposed_value.size() == _max_unique_values) {
+    _decide(agreement);
+  } else {
+    _check_nacks(agreement, agreement_nr);
+  }
 }
 
 auto LatticeAgreement::_check_nacks(
@@ -232,4 +245,17 @@ auto LatticeAgreement::_broadcast_proposal(
   }
 
   _link.broadcast(std::nullopt, std::make_tuple(data.data(), size));
+}
+
+auto LatticeAgreement::_decide(Agreement& agreement) -> void {
+  _callback(agreement.proposed_value);
+  agreement.has_decided = true;
+  // if we decided the full set, we remember this set in accepted_value. Then,
+  // when a different process sends us their proposal, we can immediately give
+  // them the full set.
+  if (agreement.proposed_value.size() == _max_unique_values) {
+    agreement.accepted_value.insert(agreement.proposed_value.begin(),
+                                    agreement.proposed_value.end());
+  }
+  _send_semaphore.release();
 }

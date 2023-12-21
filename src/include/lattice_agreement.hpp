@@ -17,13 +17,15 @@
 /// 3. Termination - Every correct process eventually decides
 class LatticeAgreement {
  public:
-  LatticeAgreement(const PerfectLink::ProcessIdType id,
-                   const BestEffortBroadcast::AvailableProcesses processes);
-
   using AgreementType = std::uint32_t;
 
   using ListenCallback =
       std::function<auto(const std::unordered_set<AgreementType>& data)->void>;
+
+  LatticeAgreement(const PerfectLink::ProcessIdType id,
+                   const BestEffortBroadcast::AvailableProcesses processes,
+                   const std::size_t max_unique_values,
+                   ListenCallback callback);
 
   /// @brief Binds this agreement link to a host and port. Once done cannot be
   /// done again.
@@ -31,8 +33,7 @@ class LatticeAgreement {
 
   /// @brief Starts listening to decided sets. Sends ACKs for new
   /// messages. Receives ACKs and resends messages with missing ACKs.
-  /// @param callback Function that will be called when a set is decided.
-  auto listen(ListenCallback callback) -> void;
+  auto listen() -> void;
 
   /// @brief Starts a new agreement with the proposed values. Assumes given
   /// values are unique.
@@ -64,8 +65,7 @@ class LatticeAgreement {
 
   /// @brief Handles incoming ACKs.
   auto _handle_ack(const PerfectLink::MessageIdType agreement_nr,
-                   const ProposalNumberType proposal_nr,
-                   ListenCallback callback) -> void;
+                   const ProposalNumberType proposal_nr) -> void;
 
   /// @brief Handles incoming NACKs.
   auto _handle_nack(const PerfectLink::MessageIdType agreement_nr,
@@ -80,6 +80,8 @@ class LatticeAgreement {
   auto _broadcast_proposal(Agreement& agreement,
                            PerfectLink::MessageIdType agreement_nr) -> void;
 
+  auto _decide(Agreement& agreement) -> void;
+
   /// @brief Amount of in-flight agreements of this process.
   static constexpr std::size_t MAX_IN_FLIGHT = 1;
 
@@ -89,7 +91,10 @@ class LatticeAgreement {
     Nack = 2,
   };
 
+  const std::size_t _max_unique_values;
   BestEffortBroadcast _link;
+  /// Function that will be called when a set is decided.
+  ListenCallback _callback;
 
   /// @brief The current agreement number used to differentiate agreements.
   PerfectLink::MessageIdType _agreement_nr = 0;

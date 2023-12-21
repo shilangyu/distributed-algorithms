@@ -127,7 +127,9 @@ int main(int argc, char** argv) {
   logger.open(parser.outputPath());
 
   // create an agreement link and bind
-  LatticeAgreement agreement{parser.id(), map_hosts(parser.hosts())};
+  LatticeAgreement agreement{parser.id(), map_hosts(parser.hosts()),
+                             config.unique_proposals,
+                             [](auto& set) { logger.decide(set); }};
   if (auto myHost = parser.hostById(parser.id()); myHost.has_value()) {
     agreement.bind(myHost.value().ip, myHost.value().port);
   } else {
@@ -138,8 +140,7 @@ int main(int argc, char** argv) {
   logger.reserve_decided_memory(16 * (1 << 20));
 
   // listen for deliveries
-  auto listen_handle = std::thread(
-      [&] { agreement.listen([](auto& set) { logger.decide(set); }); });
+  auto listen_handle = std::thread([&] { agreement.listen(); });
 
   while (config.has_more_proposals()) {
     agreement.propose(config.next_proposal());
