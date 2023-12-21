@@ -21,7 +21,8 @@ auto LatticeAgreement::propose(const std::vector<AgreementType>& values)
   std::lock_guard<std::mutex> lock(_agreements_mutex);
 
   auto& agreement = _agreements.try_emplace(_agreement_nr).first->second;
-  _broadcast_proposal(agreement, _agreement_nr, values.begin(), values.end());
+  agreement.proposed_value.insert(values.begin(), values.end());
+  _broadcast_proposal(agreement, _agreement_nr);
   _agreement_nr += 1;
 }
 
@@ -200,8 +201,35 @@ auto LatticeAgreement::_check_nacks(
     agreement.proposal_nr += 1;
     agreement.ack_count = 0;
     agreement.nack_count = 0;
-    _broadcast_proposal(agreement, agreement_nr,
-                        agreement.proposed_value.begin(),
-                        agreement.proposed_value.end());
+    _broadcast_proposal(agreement, agreement_nr);
   }
+}
+
+auto LatticeAgreement::_broadcast_proposal(
+    Agreement& agreement,
+    PerfectLink::MessageIdType agreement_nr) -> void {
+  std::array<std::uint8_t, PerfectLink::MAX_MESSAGE_SIZE> data;
+  std::size_t size = 0;
+
+  data[size++] = static_cast<std::uint8_t>(MessageKind::Proposal);
+
+  for (size_t i = 0; i < sizeof(agreement_nr); i++) {
+    data[size++] = (agreement_nr >> (8 * i)) & 0xff;
+  }
+
+  for (size_t i = 0; i < sizeof(agreement.proposal_nr); i++) {
+    data[size++] = (agreement.proposal_nr >> (8 * i)) & 0xff;
+  }
+
+  // make sure we can fit the message
+  assert(size + agreement.proposed_value.size() * sizeof(AgreementType) <
+         data.size());
+
+  for (auto& value : agreement.proposed_value) {
+    for (size_t i = 0; i < sizeof(value); i++) {
+      data[size++] = (value >> (8 * i)) & 0xff;
+    }
+  }
+
+  _link.broadcast(std::nullopt, std::make_tuple(data.data(), size));
 }
