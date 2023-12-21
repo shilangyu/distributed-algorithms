@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -207,35 +208,66 @@ class Parser {
   }
 
   struct LatticeAgreementConfig {
+    LatticeAgreementConfig(std::string config_path) : config_file(config_path) {
+      config_file.unsetf(std::ios_base::skipws);
+
+      size_t p = 0;
+      size_t vs = 0;
+      size_t ds = 0;
+      char ws;
+
+      config_file >> p >> ws >> vs >> ws >> ds >> ws;
+
+      max_proposed = vs;
+      unique_proposals = ds;
+      agreements_count = p;
+    }
+
     std::size_t max_proposed;
     std::size_t unique_proposals;
-    std::vector<std::vector<std::uint32_t>> proposals;
-  };
 
-  auto latticeAgreementConfig() const -> LatticeAgreementConfig {
-    std::ifstream infile(configPath());
-    infile.unsetf(std::ios_base::skipws);
+   private:
+    std::ifstream config_file;
+    std::size_t agreements_count;
+    std::size_t proposal_index = 0;
+    std::array<std::vector<std::uint32_t>, 100> proposals;
 
-    size_t p = 0;
-    size_t vs = 0;
-    size_t ds = 0;
-    char ws;
+    auto read_proposals_batch() -> void {
+      char ws;
 
-    infile >> p >> ws >> vs >> ws >> ds >> ws;
-    std::vector<std::vector<std::uint32_t>> proposals(p);
-
-    for (std::size_t i = 0; i < p; i++) {
-      for (std::size_t j = 0; j < vs; j++) {
-        std::uint32_t val;
-        infile >> val >> ws;
-        proposals[i].push_back(val);
-        if (ws == '\n') {
+      for (std::size_t i = 0; i < proposals.size(); i++) {
+        if (i + proposal_index >= agreements_count) {
           break;
+        }
+        proposals[i].clear();
+
+        for (std::size_t j = 0; j < max_proposed; j++) {
+          std::uint32_t val;
+          config_file >> val >> ws;
+          proposals[i].push_back(val);
+          if (ws == '\n') {
+            break;
+          }
         }
       }
     }
 
-    return LatticeAgreementConfig{vs, ds, proposals};
+   public:
+    auto has_more_proposals() const -> bool {
+      return proposal_index != agreements_count;
+    }
+
+    auto next_proposal() -> std::vector<std::uint32_t>& {
+      if (proposal_index % proposals.size() == 0) {
+        read_proposals_batch();
+      }
+
+      return proposals[proposal_index++ % proposals.size()];
+    }
+  };
+
+  auto latticeAgreementConfig() const -> LatticeAgreementConfig {
+    return LatticeAgreementConfig{configPath()};
   }
 
   std::vector<Host> hosts() const {

@@ -141,8 +141,8 @@ int main(int argc, char** argv) {
   auto listen_handle = std::thread(
       [&] { agreement.listen([](auto& set) { logger.decide(set); }); });
 
-  for (auto& proposal : config.proposals) {
-    agreement.propose(proposal);
+  while (config.has_more_proposals()) {
+    agreement.propose(config.next_proposal());
   }
 
   listen_handle.join();
@@ -158,4 +158,3 @@ int main(int argc, char** argv) {
 
 // TODO: when you have the set equal to all unique values, you can decide that
 // immediately without acks
-// TODO: stream config file
