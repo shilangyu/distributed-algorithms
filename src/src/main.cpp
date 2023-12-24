@@ -85,11 +85,11 @@ static void stop(int) {
   logger.freeze();
 
   // reset signal handlers to default
-  perror_check<sig_t>([] { return std::signal(SIGTERM, SIG_DFL); },
-                      [](auto res) { return res == SIG_ERR; },
+  perror_check<sig_t>([]() noexcept { return std::signal(SIGTERM, SIG_DFL); },
+                      [](auto res) noexcept { return res == SIG_ERR; },
                       "reset SIGTERM signal handler", true);
-  perror_check<sig_t>([] { return std::signal(SIGINT, SIG_DFL); },
-                      [](auto res) { return res == SIG_ERR; },
+  perror_check<sig_t>([]() noexcept { return std::signal(SIGINT, SIG_DFL); },
+                      [](auto res) noexcept { return res == SIG_ERR; },
                       "reset SIGINT signal handler", true);
 
   // write output file
@@ -112,11 +112,11 @@ static auto map_hosts(std::vector<Parser::Host> hosts)
 }
 
 int main(int argc, char** argv) {
-  perror_check<sig_t>([] { return std::signal(SIGTERM, stop); },
-                      [](auto res) { return res == SIG_ERR; },
+  perror_check<sig_t>([]() noexcept { return std::signal(SIGTERM, stop); },
+                      [](auto res) noexcept { return res == SIG_ERR; },
                       "set SIGTERM signal handler", true);
-  perror_check<sig_t>([] { return std::signal(SIGINT, stop); },
-                      [](auto res) { return res == SIG_ERR; },
+  perror_check<sig_t>([]() noexcept { return std::signal(SIGINT, stop); },
+                      [](auto res) noexcept { return res == SIG_ERR; },
                       "set SIGINT signal handler", true);
 
   Parser parser(argc, argv);

@@ -8,8 +8,8 @@ PerfectLink::PerfectLink(const ProcessIdType id) : _id(id) {}
 
 PerfectLink::~PerfectLink() {
   if (_sock_fd.has_value()) {
-    perror_check<int>([this] { return close(_sock_fd.value()); },
-                      [](auto res) { return res < 0; },
+    perror_check<int>([this]() noexcept { return close(_sock_fd.value()); },
+                      [](auto res) noexcept { return res < 0; },
                       "failed to close socket");
   }
   _done = true;
@@ -21,8 +21,9 @@ auto PerfectLink::bind(const in_addr_t host, const in_port_t port) -> void {
   }
 
   int sock_fd = perror_check<int>(
-      []() { return socket(PF_INET, SOCK_DGRAM, 0); },
-      [](auto res) { return res < 0; }, "socket creation failure", true);
+      []() noexcept { return socket(PF_INET, SOCK_DGRAM, 0); },
+      [](auto res) noexcept { return res < 0; }, "socket creation failure",
+      true);
 
   sockaddr_in addr;
   std::memset(&addr, 0, sizeof(addr));
@@ -31,18 +32,19 @@ auto PerfectLink::bind(const in_addr_t host, const in_port_t port) -> void {
   addr.sin_port = port;
 
   perror_check<int>(
-      [&] {
+      [&]() noexcept {
         return socket_bind(sock_fd, reinterpret_cast<sockaddr*>(&addr),
                            sizeof(addr));
       },
-      [](auto res) { return res < 0; }, "failed to bind socket", true);
+      [](auto res) noexcept { return res < 0; }, "failed to bind socket", true);
 
   perror_check<int>(
-      [sock_fd] {
+      [sock_fd]() noexcept {
         return setsockopt(sock_fd, SOL_SOCKET, SO_RCVTIMEO, &RESEND_TIMEOUT,
                           sizeof(RESEND_TIMEOUT));
       },
-      [](auto res) { return res < 0; }, "failed to set socket timeout", true);
+      [](auto res) noexcept { return res < 0; }, "failed to set socket timeout",
+      true);
 
   _sock_fd = sock_fd;
 }
@@ -126,13 +128,14 @@ auto PerfectLink::listen_batch(ListenBatchCallback callback) -> void {
       std::lock_guard<std::mutex> guard(_pending_for_ack_mutex);
       for (auto& [seq_nr, pending] : _pending_for_ack) {
         perror_check<ssize_t>(
-            [&, &seq_nr = seq_nr, &pending = pending] {
+            [&, &seq_nr = seq_nr, &pending = pending]() noexcept {
               return sendto(sock_fd, pending.message.data(),
                             pending.message_size, 0,
                             reinterpret_cast<const sockaddr*>(&pending.addr),
                             sizeof(pending.addr));
             },
-            [](auto res) { return res < 0; }, "failed to resend message");
+            [](auto res) noexcept { return res < 0; },
+            "failed to resend message");
       }
       continue;
     }
@@ -170,12 +173,12 @@ auto PerfectLink::listen_batch(ListenBatchCallback callback) -> void {
           _prepare_message(seq_nr, true, std::nullopt);
       perror_check<ssize_t>(
           [&, &ack_message = ack_message,
-           &ack_message_size = ack_message_size] {
+           &ack_message_size = ack_message_size]() noexcept {
             return sendto(
                 sock_fd, ack_message.data(), ack_message_size, MSG_NOSIGNAL,
                 reinterpret_cast<sockaddr*>(&sender_addr), sender_addr_len);
           },
-          [](auto res) { return res < 0 && errno != EPIPE; },
+          [](auto res) noexcept { return res < 0 && errno != EPIPE; },
           "failed to send ack");
     }
   }
