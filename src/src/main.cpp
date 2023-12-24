@@ -157,5 +157,4 @@ int main(int argc, char** argv) {
   return 0;
 }
 
-// TODO: when you have the set equal to all unique values, you can decide that
-// immediately without acks
+// TODO: stress run crashes

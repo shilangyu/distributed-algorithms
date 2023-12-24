@@ -100,8 +100,6 @@ class PerfectLink {
   /// @brief Id of this process.
   const ProcessIdType _id;
 
-  // TODO: std::tuple<ProcessIdType, MessageIdType> fits in a single uint64.
-  //       Could be compressed to avoid hashing.
   /// @brief Hash function for `_delivered`.
   struct hash_delivered {
     inline size_t operator()(

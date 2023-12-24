@@ -18,8 +18,6 @@ auto LatticeAgreement::bind(const in_addr_t host, const in_port_t port)
 
 auto LatticeAgreement::propose(const std::vector<AgreementType>& values)
     -> void {
-  // TODO: consider moving semaphore after all data for sending is prepared.
-  // This is quite annoying to pull off
   _send_semaphore.acquire();
 
   std::lock_guard<std::mutex> lock(_agreements_mutex);
@@ -38,7 +36,6 @@ auto LatticeAgreement::propose(const std::vector<AgreementType>& values)
 }
 
 auto LatticeAgreement::listen() -> void {
-  // TODO: check if templating the lambda helps performance
   _link.listen([&](auto process_id, auto& data) {
     std::size_t offset = 0;
 
@@ -91,12 +88,6 @@ auto LatticeAgreement::_handle_proposal(
   for (size_t i = 0; i < sizeof(proposal_nr); i++) {
     data[size++] = (proposal_nr >> (8 * i)) & 0xff;
   }
-
-  // TODO: it is possible to do without allocations, but it is quite involved:
-  // - the proposal would have to be given in a sorted order
-  // - you can take compute the set difference in a yielding way (see
-  //   std::set_difference)
-  // TODO: test how things will perform when using std::set
 
   std::lock_guard<std::mutex> lock(_agreements_mutex);
 
