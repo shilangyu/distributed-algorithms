@@ -17,4 +17,4 @@ mkdir target
 cd target
 cmake -DCMAKE_BUILD_TYPE=$MAKE_BUILD_TYPE ..
 cmake --build .
-mv src/da_proc ../bin
+mv src/da_proc .
