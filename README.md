@@ -6,7 +6,7 @@ All algorithms assume to be running in an asynchronous (or stronger) model (pack
 
 ## Algorithms
 
-See `src/include` and `src/src` for implementation. Uses C++17 with no compiler extensions.
+See `src/include` and `src/src` for implementation. Uses C++17 with no compiler extensions. They aim to be mostly thread-safe (see documentation comments) and alloc-free where possible.
 
 ### Perfect links
 
